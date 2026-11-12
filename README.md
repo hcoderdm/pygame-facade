@@ -1,6 +1,6 @@
 # Facade
 
-Menus for pygame-ce games. Your game keeps its window and loop; Facade takes your events and returns one transparent, window-sized surface to draw over your frame.
+Menus for pygame-ce games. Your game keeps its window and loop; Facade takes your events and returns one window-sized surface to draw over your frame.
 
 ![Facade screenshot](image.png "An example interface")
 
