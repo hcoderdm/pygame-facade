@@ -9,7 +9,8 @@ Menus for pygame-ce games. Your game keeps its window and loop; Facade takes you
 You need Python 3.14 or newer. Check with `python3.14 --version`; if it is missing, install it from [python.org](https://www.python.org/downloads/) or with `uv python install 3.14`.
 
 ```bash
-cd /path/to/pygame_interface
+git clone https://github.com/hcoderdm/pygame-facade.git
+cd pygame-facade
 python3.14 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -19,7 +20,7 @@ pytest
 ```
 
 ```bash
-pip install -e /path/to/pygame_interface
+pip install -e /path/to/pygame-facade
 ```
 
 The `-e` (editable) install means changes you make to Facade apply to your game without reinstalling.
@@ -45,3 +46,7 @@ if (gui := ui.render()) is not None:
 ```
 
 `render()` returns `None` while no menu is open. [examples/demo.py](examples/demo.py) is a complete example, and [DESIGN.md](DESIGN.md) explains how Facade works.
+
+## License
+
+Facade is released under the [MIT License](LICENSE). The demo's Edit Undo font is freeware by Brian Kent; see [its license](examples/assets/fonts/editundo.txt).
