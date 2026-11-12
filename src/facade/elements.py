@@ -496,7 +496,7 @@ class Button(InteractiveElement):
         text_color: RGBA = "#F0F0F0FF"
 
     label: Text = field(default_factory=ButtonText)  # Text element used for rendering the button label
-    action: Callable[[Any], bool] = field(default=lambda v: True)
+    action: Callable[[], Any] = field(default=lambda: None)  # Called with no arguments when the button is pressed
 
     padding: MEASURE = (10.0, 2.0)
     background_color: RGBA = "#30384EFF"
@@ -507,6 +507,11 @@ class Button(InteractiveElement):
     shadow_scale: float = 1.0
 
     selected_text_color: RGBA = "#EC4662FF"
+
+    def __call__(self) -> Any:
+        """Run the button's action. Buttons have no value, so no argument is passed."""
+        self.is_called = True
+        return self.action()
 
 
 @dataclass(kw_only=True)
