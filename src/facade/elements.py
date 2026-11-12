@@ -458,6 +458,7 @@ to ensure clear communication of available options and current selections.
 """
 
 
+@dataclass(kw_only=True)
 class InteractiveElement(Element):
     """
     All interactive elements have a value and an action function that takes in
