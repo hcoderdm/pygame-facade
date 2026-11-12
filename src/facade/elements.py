@@ -673,9 +673,9 @@ class Selector(InteractiveElement):
             if self.is_altered():
                 self.is_opened = True
                 self.value = self._open_index
-                self.action(self.value)
+                self.is_called = True
+                self.action(self.value)  # Call action once, with the new index
             self.is_open = False
-            self()  # Call action with new value
 
 
 @dataclass(kw_only=True)
@@ -794,6 +794,6 @@ class InputField(InteractiveElement):
             if self.is_altered():
                 self.is_opened = True
                 self.value.text = self._open_buffer
-                self.action(self.value.text)
+                self.is_called = True
+                self.action(self.value.text)  # Call action once, with the new text
             self.is_open = False
-            self()  # Call action with new value
