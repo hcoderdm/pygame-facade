@@ -86,3 +86,13 @@ def test_text_cache_is_bounded_while_resizing():
         ui.render()
 
     assert cache.nbytes <= cache.max_bytes
+
+
+def test_recomposing_gives_identical_pixels():
+    ui = Interface(size=SIZE)
+    ui.push(Start())
+    first = pixels(ui.render())
+
+    Element._iterative_version += 1  # Force a full recompose with warm caches
+
+    assert pixels(ui.render()) == first

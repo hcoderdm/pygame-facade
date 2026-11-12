@@ -51,6 +51,11 @@ _SCROLLBAR_MIN_HEIGHT = 32
 
 # Pixel-memory budgets for the renderer's surface caches
 _TEXT_CACHE_BYTES = 32 * 1024 * 1024
+_DECOR_CACHE_BYTES = 32 * 1024 * 1024
+_SHADOW_CACHE_BYTES = 16 * 1024 * 1024
+
+# Stand-in element for nodes composed without one
+_NULL_ELEMENT = Element()
 
 
 class _SurfaceCache:
@@ -101,13 +106,35 @@ class ContentNode:
     Represents a node in the UI element tree, holding an element, its
     pygame.Surface, an offset position, and a list of child ContentNode
     instances.
+
+    ``is_empty`` marks a surface known to be fully transparent, which is
+    never blitted.
     """
 
-    def __init__(self, element=None, surf=None, offset=None, children=None):
-        self.element: Element = element or Element()
-        self.surf: pygame.Surface = surf or blank_surf()
+    __slots__ = ("element", "surf", "offset", "children", "is_empty", "_extent")
+
+    def __init__(self, element=None, surf=None, offset=None, children=None, is_empty=False):
+        self.element: Element = element if element is not None else _NULL_ELEMENT
+        self.surf: pygame.Surface = surf if surf is not None else blank_surf()
         self.offset: tuple[int, int] = offset or (0, 0)
         self.children: list[ContentNode] = children or []
+        self.is_empty: bool = is_empty
+        self._extent: tuple[int, int] | None = None
+
+    def extent(self) -> tuple[int, int]:
+        """
+        Width and height of this node's surface and all its descendants,
+        relative to the node. Memoized: callers compute it only once the
+        subtree's surfaces and offsets are final.
+        """
+        if self._extent is None:
+            pw, ph = self.surf.get_size()
+            for child in self.children:
+                cw, ch = child.extent()
+                pw = max(pw, child.offset[0] + cw)
+                ph = max(ph, child.offset[1] + ch)
+            self._extent = (pw, ph)
+        return self._extent
 
 
 def _route_clicks(render_element: Element, target: Element) -> None:
@@ -149,6 +176,7 @@ class MenuRenderer:
             Slider: self._compose_slider_node,
             Selector: self._compose_selector_node,
         }
+        self._composer_by_type: dict[type, Callable[..., ContentNode] | None] = {}
 
         # Composed menu, rebuilt only when an element, the size or the menu changes
         self._menu_tree_cache: ContentNode | None = None
@@ -163,6 +191,8 @@ class MenuRenderer:
 
         # Surfaces reused across recomposes
         self._text_cache = _SurfaceCache(_TEXT_CACHE_BYTES)  # Rendered strings
+        self._decor_cache = _SurfaceCache(_DECOR_CACHE_BYTES)  # Element background and border boxes
+        self._shadow_cache = _SurfaceCache(_SHADOW_CACHE_BYTES)  # Shadows of cached surfaces
 
         # Final GUI surface, re-blitted only when the view (scroll) changes
         self._output_cache: pygame.Surface | None = None
@@ -279,7 +309,9 @@ class MenuRenderer:
     def _render_element_tree(self, root: ContentNode) -> pygame.Surface:
         """Render the entire element tree onto a single surface and return it."""
 
-        root_surf = root.surf
+        # The root's box may be shared through the decoration cache, so draw
+        # on a copy rather than on the cached surface
+        root_surf = root.surf.copy()
         root_pw, root_ph = root.surf.size
         element_stack = deque([(root, (0, 0), 0)])
         while element_stack:
@@ -295,9 +327,17 @@ class MenuRenderer:
                     element_stack.append((child, (absolute_px, absolute_py), depth + 1))
                 continue
 
+            # Nothing to draw for a transparent or zero-sized node, though its
+            # children may still have content
+            if node.is_empty or node.surf.width == 0 or node.surf.height == 0:
+                for child in node.children:
+                    element_stack.append((child, (absolute_px, absolute_py), depth + 1))
+                continue
+
             # Render the node's shadow here, so that content overlays it
             shadow_surf = self._draw_shadow(node.element, node.surf)
-            shadow_offset_px, shadow_offset_py = self._resolve_measure(node.element.shadow_offset, node.element.shadow_offset_measure, node.surf.width, node.surf.height)
+            if shadow_surf is not None:
+                shadow_offset_px, shadow_offset_py = self._resolve_measure(node.element.shadow_offset, node.element.shadow_offset_measure, node.surf.width, node.surf.height)
 
             # Handle fixed elements, no adjustment for flow
             if node.element.is_fixed:
@@ -320,11 +360,13 @@ class MenuRenderer:
                 elif node.element.alignment in (AlignmentType.BOTTOMLEFT, AlignmentType.MIDBOTTOM, AlignmentType.BOTTOMRIGHT):
                     offset_ph = max(0, root_ph - content_ph)
 
-                root_surf.blit(shadow_surf, (offset_pw + shadow_offset_px, offset_ph + shadow_offset_py))
+                if shadow_surf is not None:
+                    root_surf.blit(shadow_surf, (offset_pw + shadow_offset_px, offset_ph + shadow_offset_py))
                 root_surf.blit(node.surf, (offset_pw, offset_ph))
             else:
                 # Render the node's shadow and surface onto the root
-                root_surf.blit(shadow_surf, (absolute_px + shadow_offset_px, absolute_py + shadow_offset_py))
+                if shadow_surf is not None:
+                    root_surf.blit(shadow_surf, (absolute_px + shadow_offset_px, absolute_py + shadow_offset_py))
                 root_surf.blit(node.surf, (absolute_px, absolute_py))
 
             for child in node.children:
@@ -344,7 +386,7 @@ class MenuRenderer:
             absolute_py = root_position[1] + node.offset[1]
 
             if node.element.is_selectable:
-                hit_element = getattr(node.element, "_interaction_target", node.element)
+                hit_element = node.element._interaction_target or node.element
                 node_rect = pygame.Rect(absolute_px, absolute_py, node.surf.get_width(), node.surf.get_height())
                 self._menu_rect_cache.append((hit_element, node_rect, depth))
 
@@ -361,18 +403,35 @@ class MenuRenderer:
         self,
         element: Element,
         element_surf: pygame.Surface,
-    ) -> pygame.Surface:
+    ) -> pygame.Surface | None:
         """
         Generates a shadow surface for the given element based on its shadow
-        color, alpha, and scale properties. Returns a blank surface if the
-        shadow would be invisible. Uses a mask of element_surf to create and
+        color, alpha, and scale properties. Returns ``None`` if the shadow
+        would be invisible. Uses a mask of element_surf to create and
         optionally scale the shadow, applying the specified color and
         transparency.
+
+        Text and decoration surfaces are reused across recomposes, so the
+        shadow is cached by the identity of ``element_surf``. The cache holds
+        the source surface, so its id cannot be reused while cached.
         """
 
         # Do not create a shadow if it will not be seen
         if element.shadow_color == TRANSPARENT or element.shadow_alpha == 0x0:
-            return blank_surf()
+            return None
+
+        cache_key = (id(element_surf), element.shadow_color, element.shadow_alpha, element.shadow_scale)
+        cached = self._shadow_cache.get(cache_key)
+        if cached is not None and cached[0] is element_surf:
+            return cached[1]
+
+        shadow_surf = self._make_shadow(element, element_surf)
+        self._shadow_cache.put(cache_key, (element_surf, shadow_surf), shadow_surf)
+        return shadow_surf
+
+    @staticmethod
+    def _make_shadow(element: Element, element_surf: pygame.Surface) -> pygame.Surface:
+        """Draw the shadow of ``element_surf`` in the element's shadow colour."""
 
         # Create a mask of the element to use for shadow
         mask = pygame.mask.from_surface(element_surf)
@@ -506,16 +565,8 @@ class MenuRenderer:
 
         inner_pw, inner_ph = content_range_pw.start, content_range_ph.start
 
-        def get_children_size(node: ContentNode) -> tuple[int, int]:
-            """Compute total width and height of node including all descendants."""
-            child_pw, child_ph = node.surf.get_size()
-            for c in node.children:
-                cw, ch = get_children_size(c)
-                child_pw = max(child_pw, c.offset[0] + cw)
-                child_ph = max(child_ph, c.offset[1] + ch)
-            return child_pw, child_ph
-
-        total_pw, total_ph = get_children_size(content_node)
+        # Bounding box of the content and all its descendants
+        total_pw, total_ph = content_node.extent()
         if extends:
             inner_pw = max(inner_pw, total_pw)
             inner_ph = max(inner_ph, total_ph)
@@ -542,25 +593,54 @@ class MenuRenderer:
         # Set up to apply decorations to the element
         final_pw = inner_pw + decor_pw
         final_ph = inner_ph + decor_ph
-        final_surf = pygame.Surface((final_pw, final_ph), pygame.SRCALPHA)
         border_rect = pygame.Rect(margin_pw, margin_ph, final_pw - 2 * margin_pw, final_ph - 2 * margin_ph)
         background_rect = border_rect.inflate(-2 * border_thickness, -2 * border_thickness)
 
-        # Draw border decoration
+        # Decorations that would be drawn fully transparent are skipped
+        border_color = None
         if border_rect.width > 0 and border_rect.height > 0 and border_thickness > 0:
             border_color = self._apply_alpha(self._parse_hex_color(content_element.border_color), content_element.border_alpha)
-            pygame.draw.rect(final_surf, border_color, border_rect)
-
-        # Draw background decoration
+            if border_color.a == 0:
+                border_color = None
+        bg_color = None
         if background_rect.width > 0 and background_rect.height > 0:
             bg_color = self._apply_alpha(self._parse_hex_color(content_element.background_color), content_element.background_alpha)
-            pygame.draw.rect(final_surf, bg_color, background_rect)
+            if bg_color.a == 0:
+                bg_color = None
+
+        # The box depends only on these values, so identical boxes share one
+        # surface across elements and recomposes. Surfaces in the tree are
+        # never drawn on; the root is copied before it becomes the canvas
+        decor_key = (
+            final_pw,
+            final_ph,
+            margin_pw,
+            margin_ph,
+            border_thickness,
+            tuple(border_color) if border_color is not None else None,
+            tuple(bg_color) if bg_color is not None else None,
+        )
+        final_surf = self._decor_cache.get(decor_key)
+        if final_surf is None:
+            final_surf = pygame.Surface((final_pw, final_ph), pygame.SRCALPHA)
+            if border_color is not None:
+                pygame.draw.rect(final_surf, border_color, border_rect)
+            if bg_color is not None:
+                pygame.draw.rect(final_surf, bg_color, background_rect)
+            self._decor_cache.put(decor_key, final_surf, final_surf)
 
         # Compose a final element node
-        element_node = ContentNode(content_element, final_surf, (offset_pw, offset_ph), children=[content_node])
+        element_node = ContentNode(
+            content_element,
+            final_surf,
+            (offset_pw, offset_ph),
+            children=[content_node],
+            is_empty=border_color is None and bg_color is None,
+        )
 
         # TODO: Should be fixed to function correctly
         def rotate_subtree(node: ContentNode, rotation: RotationType):
+            node._extent = None  # Surfaces and offsets change below
             x, y = node.offset
             if rotation == RotationType.LEFT:
                 node.surf = pygame.transform.rotate(node.surf, 90)
@@ -576,7 +656,8 @@ class MenuRenderer:
                 rotate_subtree(child, rotation)
 
         # Handle rotation on final element
-        rotate_subtree(element_node, element.rotation)
+        if element.rotation != RotationType.NONE:
+            rotate_subtree(element_node, element.rotation)
 
         # Set element surf to this final composed surface
         return element_node
@@ -598,11 +679,16 @@ class MenuRenderer:
 
         # Match the current element to its associated renderer by walking the MRO,
         # so subclasses fall back to the nearest registered parent composer.
-        renderer: Callable[..., ContentNode] | None = None
-        for cls in type(element).mro():
-            renderer = self._NODE_COMPOSERS.get(cls)
-            if renderer is not None:
-                break
+        element_type = type(element)
+        if element_type in self._composer_by_type:
+            renderer = self._composer_by_type[element_type]
+        else:
+            renderer = None
+            for cls in element_type.mro():
+                renderer = self._NODE_COMPOSERS.get(cls)
+                if renderer is not None:
+                    break
+            self._composer_by_type[element_type] = renderer
 
         if renderer is not None:
             return renderer(
@@ -715,6 +801,8 @@ class MenuRenderer:
         and alpha from the given element.
         """
         gap_surf = blank_surf((range_pw.start, range_ph.start))
+        if gap_surf.width == 0 or gap_surf.height == 0 or element.background_alpha == 0 or self._parse_hex_color(element.background_color).a == 0:
+            return ContentNode(element, gap_surf, is_empty=True)
         gap_surf.fill(element.background_color)
         gap_surf.set_alpha(element.background_alpha)
         return ContentNode(element, gap_surf)
@@ -797,7 +885,7 @@ class MenuRenderer:
     ) -> ContentNode:
         """"""
         fill_surf = blank_surf((range_pw.stop, range_ph.stop))
-        return ContentNode(element, fill_surf)
+        return ContentNode(element, fill_surf, is_empty=True)
 
     def _compose_image_node(
         self,
@@ -818,7 +906,7 @@ class MenuRenderer:
         selection_id: str | None,
     ) -> ContentNode:
         image_surf = blank_surf((1, 1))
-        return ContentNode(element, image_surf)
+        return ContentNode(element, image_surf, is_empty=True)
 
     def _compose_selector_node(
         self,
