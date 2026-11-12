@@ -2,15 +2,21 @@
 elements.py
 """
 
+from __future__ import annotations
+
 from abc import ABC
 from dataclasses import dataclass, field
 from enum import Enum, Flag, auto
 from itertools import count
-from typing import Callable, ClassVar, Any
-from typing import TYPE_CHECKING, Annotated, ClassVar
 import math
 import re
+from typing import Callable, ClassVar, Any
+from typing import Annotated, ClassVar
 import uuid
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .types import MenuType
 
 
 FLOAT_REGEX = r"^[+-]?(\d+(\.\d*)?|\.\d+)$"
@@ -42,6 +48,9 @@ WHITE: RGBA = "#FFFFFFFF"
 
 NATIVE_FONT_SIZE: int = 18
 
+"#AABBCCDD"
+"#30364E"
+"#2F2F47"
 
 """
 Attribute types.
@@ -103,6 +112,17 @@ class TextDecorationTypes(Flag):
     UNDERLINE = auto()
 
 
+class ImageTransformType(Flag):
+    """"""
+
+    NONE = 0
+    FLIP_X = auto()  # Flip sprite horizontally
+    FLIP_Y = auto()  # Flip sprite vertically
+    ROTATE_CCW_90 = auto()  # Rotate 90 degrees counterclockwise
+    ROTATE_CCW_180 = auto()  # Rotate 180 degrees counterclockwise
+    ROTATE_CCW_270 = auto()  # Rotate 270 degrees counterclockwise
+
+
 class OverflowType(Enum):
     """
     Represents the type of overflow handling, with options: CLIP, EXTEND,
@@ -112,6 +132,15 @@ class OverflowType(Enum):
     CLIP = auto()
     EXTEND = auto()
     OVERFLOW = auto()
+
+
+class RotationType(Enum):
+    """"""
+
+    NONE = 0
+    LEFT = auto()
+    RIGHT = auto()
+    UPTURNED = auto()
 
 
 """
@@ -134,9 +163,6 @@ class Element(ABC):
     """
 
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
-    justify: JustifyType = JustifyType.CENTER
-    alignment: AlignmentType = AlignmentType.TOPLEFT
-    overflow: OverflowType = OverflowType.EXTEND
 
     size: MEASURE = (0.0, 0.0)
     anchor: MEASURE = (0.0, 0.0)
@@ -149,6 +175,11 @@ class Element(ABC):
     margin_measure: MeasureType = MeasureType.ABSOLUTE
     offset_measure: MeasureType = MeasureType.ABSOLUTE
     padding_measure: MeasureType = MeasureType.ABSOLUTE
+
+    justify: JustifyType = JustifyType.CENTER
+    alignment: AlignmentType = AlignmentType.TOPLEFT
+    overflow: OverflowType = OverflowType.EXTEND
+    rotation: RotationType = RotationType.NONE
 
     background_color: RGBA = WHITE
     background_alpha: int = 0xFF
@@ -165,8 +196,36 @@ class Element(ABC):
 
     is_selectable: bool = True  # Whether the element can be selected for interaction
     is_visible: bool = True  # Whether the element should be rendered
+    is_fixed: bool = False
 
     _interaction_target: Element | None = None
+    _iterative_version: ClassVar[int] = 0
+
+    # TODO: No idea why this is not working
+    def __repr__(self):
+        return self.__class__.__name__  # Only prints the name attribute
+
+    def __setattr__(self, name, value):
+        if hasattr(self, name) and getattr(self, name) != value:
+            Element._iterative_version += 1
+        object.__setattr__(self, name, value)
+
+
+"""
+Element modifiers.
+"""
+
+
+@dataclass(kw_only=True)
+class SelectedModifier(Element):
+    """Per-element overrides applied when the element is the current selection.
+
+    Every field mirrors an ``Element`` property but defaults to ``None``,
+    meaning "keep the element's own value."  Only non-``None`` fields take
+    effect while the element is selected.
+    """
+
+    text_color: RGBA = COLOR_PALETTE_ACCENT
 
 
 """
@@ -238,6 +297,13 @@ class Gap(Element):
     is_flexible: bool = False
     is_selectable: bool = False
     is_expandable: bool = False
+
+
+@dataclass(kw_only=True)
+class Fill(Element):
+    """"""
+
+    pass
 
 
 """
@@ -361,6 +427,25 @@ class HeadingThreeText(Text):
     text_format: TextDecorationTypes = TextDecorationTypes.NONE
 
 
+@dataclass(kw_only=True)
+class Image(Element):
+    """"""
+
+    image_path: str  # Path to the sprite image file
+
+    scale: tuple[float, float] = (1.0, 1.0)  # Scale factors for image resizing
+    transform: ImageTransformType = ImageTransformType.NONE  # Built-in transformation flags for flipping/rotating
+    tint: RGBA = TRANSPARENT  # Color tint (RGBA) applied to image
+    alpha: float = 1.0  # Transparency level (0.0 = transparent, 1.0 = opaque)
+
+    alignment: AlignmentType = AlignmentType.BOTTOMRIGHT
+
+    is_fixed: bool = True
+    background_color: RGBA = TRANSPARENT
+
+    is_selectable: bool = False  # Images are not selectable
+
+
 """
 Interactive elements. User-controllable components that enable player
 input and decision-making within menus. These elements respond to keyboard
@@ -372,8 +457,24 @@ to ensure clear communication of available options and current selections.
 """
 
 
+class InteractiveElement(Element):
+    """
+    All interactive elements have a value and an action function that takes in
+    that value and returns a boolean. They are all callable with that action.
+    """
+
+    value: Any = ""
+    action: Callable[[Any], bool] = field(default=lambda v: True)
+
+    is_called: bool = False
+
+    def __call__(self) -> bool:
+        self.is_called = True
+        return self.action(self.value)
+
+
 @dataclass(kw_only=True)
-class Button(Element):
+class Button(InteractiveElement):
     """
     Represents a UI button element with customizable label text, appearance,
     and an associated action callable. The button supports styling options
@@ -393,10 +494,10 @@ class Button(Element):
         text_color: RGBA = "#F0F0F0FF"
 
     label: Text = field(default_factory=ButtonText)  # Text element used for rendering the button label
-    action: Callable[[], None] = field(default=lambda: None)  # Function to call when button is activated
+    action: Callable[[Any], bool] = field(default=lambda v: True)
 
     padding: MEASURE = (10.0, 2.0)
-    background_color: RGBA = "#30384eFF"
+    background_color: RGBA = "#30384EFF"
     border_color: RGBA = "#606060FF"
     border_thickness: int = 1
     shadow_color: RGBA = "#30384eFF"
@@ -405,16 +506,173 @@ class Button(Element):
 
     selected_text_color: RGBA = "#EC4662FF"
 
-    def __call__(self):
-        """
-        Invokes the button's associated action when the Button instance is
-        called like a function.
-        """
-        self.action()
+
+@dataclass(kw_only=True)
+class Toggle(InteractiveElement):
+    """An on/off boolean switch."""
+
+    @dataclass(kw_only=True)
+    class ToggleText(NormalText):
+        """"""
+
+        text: str = "FALSE"
+        font_size: int = 18
+        text_color: RGBA = "#E0E0E0FF"  # "#30384eFF"
+        alignment: AlignmentType = AlignmentType.CENTER
+
+    value: bool = False  # Current boolean state
+    action: Callable[[Any], bool] = field(default=lambda v: True)
+
+    label: Toggle.ToggleText = field(default_factory=ToggleText)
+
+    alignment: AlignmentType = AlignmentType.CENTER
+
+    size: MEASURE = (64.0, 0.0)  # 40.0 is double the toggle (17.0)
+    padding: MEASURE = (8.0, 2.0)
+    background_color: RGBA = "#181C27FF"
+    border_color: RGBA = "#E0E0E0FF"
+    border_thickness: int = 1
+    shadow_color: RGBA = "#30384eFF"
+    shadow_alpha: int = 0xB0
+    shadow_scale: float = 1.0
+
+    selected_border_color: RGBA = "#EC4662FF"
+    edited_text_color: RGBA = "#F0B443FF"
+    toggled_text: str = "TRUE"
+
+    def __call__(self) -> bool:
+        """Inverse value and call action with value."""
+
+        self.value = not self.value
+        self.is_called = True
+        return self.action(self.value)
 
 
 @dataclass(kw_only=True)
-class InputField(Element):
+class Slider(InteractiveElement):
+    """A numeric range adjusted with left/right."""
+
+    value: float = 0.0  # Current numeric value within the range
+    range: tuple[float, float] = (0, 1)  # Minimum and maximum allowed values
+    step: float = 0.1  # Increment/decrement amount per adjustment
+
+    is_opened: bool = field(default=False, init=False, repr=False)
+    is_open: bool = field(default=False, init=False, repr=False)
+
+    def increment(self) -> None:
+        """Increase the slider value by one step, clamping to the maximum range."""
+        self.value = min(self.range[1], round(self.value + self.step, 10))
+        self.action(self.value)
+
+    def decrement(self) -> None:
+        """Decrease the slider value by one step, clamping to the minimum range."""
+        self.value = max(self.range[0], round(self.value - self.step, 10))
+        self.action(self.value)
+
+
+@dataclass(kw_only=True)
+class Selector(InteractiveElement):
+
+    @dataclass(kw_only=True)
+    class LeftShiftArrow(NormalText):
+        """"""
+
+        text: str = "<"
+        font_size: int = int(18 * 0.75)
+        text_color: RGBA = "#F0F0F0FF"
+
+    @dataclass(kw_only=True)
+    class RightShiftArrow(NormalText):
+        """"""
+
+        text: str = ">"
+        font_size: int = int(18 * 0.75)
+        text_color: RGBA = "#F0F0F0FF"
+
+    @dataclass(kw_only=True)
+    class SelectionText(NormalText):
+        """"""
+
+        text: str = "[SELECTION]"
+        font_size: int = 18
+        text_color: RGBA = "#F0F0F0FF"
+
+    value: int = 0
+    selections: tuple[str, ...] = ("",)
+
+    selection_text: SelectionText = field(default_factory=SelectionText)
+    left_arrow: LeftShiftArrow = field(default_factory=LeftShiftArrow)
+    right_arrow: RightShiftArrow = field(default_factory=RightShiftArrow)
+
+    action: Callable[[Any], bool] = field(default=lambda v: True)
+
+    size: MEASURE = (0.0, 0.0)
+    padding: MEASURE = (4.0, 2.0)
+    background_color: RGBA = "#181C27FF"
+    border_color: RGBA = "#E0E0E0FF"
+    border_thickness: int = 1
+    shadow_color: RGBA = "#30384eFF"
+    shadow_alpha: int = 0xB0
+    shadow_scale: float = 1.0
+
+    selected_border_color: RGBA = "#EC4662FF"
+    altered_selection_color: RGBA = "#F0B443FF"
+    disabled_arrow_color: RGBA = "#30384EFF"
+
+    is_open: bool = field(default=False, init=False, repr=False)
+    is_opened: bool = field(default=False, init=False, repr=False)
+    _open_index: int = field(default=0, init=False, repr=False)
+
+    def is_altered(self) -> bool:
+        """"""
+        if self.is_open and not self.is_opened:
+            return self._open_index != self.value
+        else:
+            return self.is_opened
+
+    def buffer_index(self) -> int:
+        if self.is_open:
+            return self._open_index
+        else:
+            return self.value
+
+    def selection(self) -> str:
+        """"""
+        if self.is_open:
+            return self.selections[self._open_index]
+        return self.selections[self.value]
+
+    def open(self) -> None:
+        """Enter edit mode, copying the current value to the edit buffer."""
+        self.is_open = True
+        self._open_index = self.value
+
+    def next(self) -> None:
+        if self.is_open:
+            self._open_index = min((self._open_index + 1), len(self.selections) - 1)
+
+    def previous(self) -> None:
+        if self.is_open:
+            self._open_index = max((self._open_index - 1), 0)
+
+    def cancel(self) -> None:
+        """Discard the open buffer and exit open mode without saving."""
+        self._open_index = 0
+        self.is_open = False
+
+    def close(self) -> None:
+        """Commit the open buffer as the new value and exit open mode."""
+        if self.is_open:
+            if self.is_altered():
+                self.is_opened = True
+                self.value = self._open_index
+                self.action(self.value)
+            self.is_open = False
+            self()  # Call action with new value
+
+
+@dataclass(kw_only=True)
+class InputField(InteractiveElement):
 
     @dataclass(kw_only=True)
     class InputHintText(NormalText):
@@ -425,7 +683,7 @@ class InputField(Element):
         """
 
         text: str = "[RETURN]"
-        font_size: int = int(18 * 1.5)
+        font_size: int = 18
         text_color: RGBA = "#30384EFF"
         text_decorations: TextDecorationTypes = TextDecorationTypes.ITALIC | TextDecorationTypes.ANTIALIASING
 
@@ -437,18 +695,18 @@ class InputField(Element):
         text appearance needs to be specified.
         """
 
-        font_size: int = int(18 * 1.5)
+        font_size: int = 18
         text_color: RGBA = "#F0F0F0FF"
 
     label: Text = field(default_factory=InputHintText)  # Current committed text value
     hint: Text = field(default_factory=InputHintText)  # Current committed text value
     value: Text = field(default_factory=InputValueText)  # Current committed text value
-    action: Callable[[str], None] = field(default=lambda v: None)  # Function called with new value when committed
-    authenticator: Callable[[str], bool] = field(default=lambda s: bool(re.fullmatch(ALPHANUMERIC_REGEX, s)))
+    action: Callable[[Any], bool] = field(default=lambda v: True)  # Function called with new value when committed
+    validator: Callable[[str], bool] = field(default=lambda s: bool(re.fullmatch(ALPHANUMERIC_REGEX, s)))
 
-    size: MEASURE = (64.0, 25.0)
+    size: MEASURE = (64.0, 0.0)
     padding: MEASURE = (4.0, 2.0)
-    background_color: RGBA = "#0C0E14FF"
+    background_color: RGBA = "#181C27FF"
     border_color: RGBA = "#E0E0E0FF"
     border_thickness: int = 1
     shadow_color: RGBA = "#30384eFF"
@@ -456,38 +714,29 @@ class InputField(Element):
     shadow_scale: float = 1.0
 
     selected_border_color: RGBA = "#EC4662FF"
-    inauthentic_text_color: RGBA = "#EC4662FF"
+    invalid_text_color: RGBA = "#EC4662FF"
+    edited_text_color: RGBA = "#F0B443FF"
     open_cursor_color: RGBA = "#EC4662FF"
 
-    is_flexible: bool = False
-
-    _is_editing: bool = field(default=False, init=False, repr=False)  # Internal flag indicating edit mode
-    _buffer_text: str = field(default="", init=False, repr=False)  # Internal buffer for text being edited
+    is_opened: bool = field(default=False, init=False, repr=False)
+    is_open: bool = field(default=False, init=False, repr=False)
+    _open_buffer: str = field(default="", init=False, repr=False)  # Internal buffer for text being edited
 
     _frames = ["_", ""]
     _frame_duration: float = 0.5
     _current_frame: int = 0
 
-    def __call__(self):
-        if not self.is_open:
-            self.open()
-
-    @property
-    def is_open(self) -> bool:
-        """Return True if the input field is currently in edit mode."""
-        return self._is_editing
-
     def authenticate(self) -> bool:
         """"""
-        return self.authenticator(self.get_field())
+        return self.validator(self.get_field())
 
     def get_field(self) -> str:
         """Buffer while editing, or the committed value otherwise."""
-        return self._buffer_text if self._is_editing else self.value.text
+        return self._open_buffer if self.is_open else self.value.text
 
     def get_cursor(self) -> str:
         """"""
-        if not self._is_editing:
+        if not self.is_open:
             return ""
         from config import FPS
 
@@ -497,6 +746,13 @@ class InputField(Element):
         self._current_frame = (self._current_frame + 1) % len(stretched_frames)
         return frame
 
+    def is_altered(self) -> bool:
+        """"""
+        if self.is_open and not self.is_opened:
+            return self._open_buffer != self.value.text
+        else:
+            return self.is_opened
+
     """
     Change value. Provide functionality for modifying the input field's text 
     content when the input is open. Until the input is closed, the new version
@@ -505,30 +761,33 @@ class InputField(Element):
 
     def open(self) -> None:
         """Enter edit mode, copying the current value to the edit buffer."""
-        self._is_editing = True
-        self._buffer_text = self.value.text
+        self.is_open = True
+        self._open_buffer = self.value.text
         self._current_frame = 0
 
     def append(self, character: str) -> None:
         """Add a character to the edit buffer if currently editing."""
-        if self._is_editing:
-            self._buffer_text += character.upper()
+        if self.is_open:
+            self._open_buffer += character.upper()
         self._current_frame = 0
 
     def truncate(self) -> None:
         """Remove the last character from the edit buffer if currently editing."""
-        if self._is_editing and self._buffer_text:
-            self._buffer_text = self._buffer_text[:-1]
+        if self.is_open and self._open_buffer:
+            self._open_buffer = self._open_buffer[:-1]
         self._current_frame = 0
-
-    def close(self) -> None:
-        """Commit the edit buffer as the new value and exit edit mode."""
-        if self._is_editing and self.authenticate():
-            self.value.text = self._buffer_text
-            self._is_editing = False
-            self.action(self.value.text)
 
     def cancel(self) -> None:
         """Discard the edit buffer and exit edit mode without saving."""
-        self._is_editing = False
-        self._buffer_text = ""
+        self.is_open = False
+        self._open_buffer = ""
+
+    def close(self) -> None:
+        """Commit the edit buffer as the new value and exit edit mode."""
+        if self.is_open and self.authenticate():
+            if self.is_altered():
+                self.is_opened = True
+                self.value.text = self._open_buffer
+                self.action(self.value.text)
+            self.is_open = False
+            self()  # Call action with new value
