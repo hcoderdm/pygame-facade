@@ -4,6 +4,7 @@ facade
 Menu and UI overlay toolkit for pygame-ce games.
 """
 
+from .assets import FontManager, ImageManager
 from .elements import (
     MEASURE,
     RGBA,
@@ -46,6 +47,7 @@ from .manager import (
     manage_menu_textinput,
 )
 from .menus import About, MenuType, Pause, Settings, Start
+from .renderer import MenuRenderer
 
 
 __all__ = [
@@ -95,4 +97,8 @@ __all__ = [
     "manage_menu_mousewheel",
     "manage_menu_keydown",
     "manage_menu_textinput",
+    # Rendering
+    "MenuRenderer",
+    "FontManager",
+    "ImageManager",
 ]
