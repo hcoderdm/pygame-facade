@@ -1,66 +1,142 @@
-# Pygame Interface #
+# Facade
 
-A small UI toolkit for pygame-ce games that provides menu and element primitives.
+Facade is a menu and UI overlay toolkit for pygame-ce games. Your game keeps its own window and game loop; Facade takes your events and gives you back one window-sized GUI surface to draw over your frame.
 
-*Please note, this code is an incomplete repository with code from my ongoing project Mountain of Tiles. Of importance is that I have excluded the renderer, and for that I am very sorry.*
+The code started as the menu system of my game Mountain of Tiles.
 
-Please, check back in for future updates or reach out to me directly with questions.
+![Facade screenshot](image.png "An example interface")
 
-![Pygame Interface Screenshot](image.png "An example interface")
+## Requirements
 
-## Description
-
-The project packages common menu widgets and layout helpers so game code can focus on behavior instead of boilerplate UI. Element classes in [elements.py](elements.py) cover styling, layout, text, and imagery. Menu definitions in [types.py](types.py) compose those elements into full screens, and [manager.py](manager.py) exposes a push/pop stack for swapping menus during gameplay. Shared tuning constants live in [config.py](config.py) and flow into the auto-built Settings menu.
+- Python 3.14+
+- pygame-ce 2.5+
 
 ## Installation
 
-1. Install Python 3.11+.
-2. Install dependencies:
+Facade is not published on PyPI. Install it from a local checkout, in editable mode so changes to the library apply immediately:
 
-    ```bash
-    pip install -r requirements.text
-    ```
-
-3. Ensure pygame-ce can open a window on your platform (SDL prerequisites on Linux; macOS is ready out of the box).
-
-## Usage
-
-Define your menu actions, register menus, and drive the stack during the game loop.
-
-```python
-from manager import menu_manager
-from types import Start, Pause
-
-def start_game():
-	print("Starting...")
-
-def resume_game():
-	print("Resuming...")
-
-# Create menus
-start_menu = Start(on_start=start_game, on_quit=quit)
-pause_menu = Pause(on_resume=resume_game, on_exit=quit)
-
-# Register and show the start menu
-menu_manager.add_menu(start_menu)
-menu_manager.add_menu(pause_menu)
-menu_manager.push_stack(Start)
-
-# Later, when pausing
-menu_manager.push_stack(Pause)
-
-# Handling selection
-selected = menu_manager.top().get_selected_element()
-if selected:
-	print("Currently focused element", selected.id)
+```bash
+pip install -e /path/to/facade
 ```
 
-The `Settings` menu auto-generates editable fields for each uppercase value in [config.py](config.py); value changes are applied live via its validators and actions. Customize or subclass the provided menus to match your game’s branding, and compose new menus by building `Element` trees.
+To work on Facade itself, install the test dependencies too and run the tests from the repository root:
 
-## Features
+```bash
+pip install -e ".[dev]"
+```
 
-- Stack-based menu manager with push/pop semantics
-- Rich UI element set: text, buttons, images, divisions, gaps, shadows, borders
-- Built-in menus: Start, Pause, Settings (auto-wires `config` values), About
-- Selection helpers for keyboard/controller navigation
-- Configurable layout metrics (absolute/relative sizing, padding, gap, justify/alignment)
+```bash
+pytest
+```
+
+## Quick start
+
+Create an `Interface` the size of your window, open a menu, forward events to it, and blit what it renders:
+
+```python
+import pygame
+from facade import Interface, Pause, Start
+
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+running = True
+
+def quit_game():
+    global running
+    running = False
+
+ui = Interface(size=screen.get_size())
+ui.add_menu(Pause(on_resume=ui.pop))
+ui.push(Start(on_start=ui.clear, on_quit=quit_game))
+
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif ui.handle_event(event):
+            continue  # The menu used this event
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE and not ui.is_open:
+            ui.push(Pause)
+
+    screen.fill("darkgreen")  # Draw your game here
+    if (gui := ui.render()) is not None:
+        screen.blit(gui, (0, 0))
+    pygame.display.flip()
+```
+
+[examples/demo.py](examples/demo.py) is a complete version with Settings and About menus. Run it from the repository root:
+
+```bash
+python examples/demo.py
+```
+
+## How it works
+
+`Interface.render()` returns a `SRCALPHA` surface the size of the window. It is transparent outside the menu, and translucent menus such as `Pause` let your game show through. While no menu is open it returns `None`, so you can skip the blit. The same surface is returned until something visible changes, so calling it every frame is cheap.
+
+`Interface.handle_event(event)` returns `True` when the menu used the event and `False` otherwise, including whenever no menu is open, so your game only handles input the GUI did not use. Mouse positions are window coordinates, because the GUI surface is blitted at `(0, 0)`.
+
+Menus form a stack. `push` opens a menu on top, taking either a menu instance or the type of a menu registered with `add_menu`; `pop` closes the top menu; `clear` closes all of them. Escape closes the top menu when there is one below it. When there is nothing to go back to, Escape is left to your game, which can decide, for example, whether it closes `Pause`.
+
+Create the window with `pygame.display.set_mode` before calling `render`, since surfaces are converted to the display format. Call `ui.resize(size)` when the window size changes. Pass `set_cursor=False` to `Interface` if your game manages the mouse cursor itself; by default the cursor becomes a hand over selectable elements.
+
+## Menus
+
+All menu callbacks are called with no arguments.
+
+- `Start`: title screen with `on_start`, `on_settings`, `on_about` and `on_quit`. Its title is Mountain of Tiles; subclass it or build your own menu for your game's title.
+- `Pause`: translucent overlay with `on_resume`, `on_restart` and `on_exit`.
+- `Settings`: builds an editor for every UPPERCASE attribute of the object you pass as `settings` (a module, `SimpleNamespace` or other object) and writes edits back with `setattr`. Enums and booleans get a `Selector`; ints, floats and strings get an `InputField` that only accepts values of the right type. It also takes `on_return`.
+- `About`: placeholder text with `on_return`.
+
+To build your own menu, subclass `MenuType` and set `root_elements` in `__post_init__`:
+
+```python
+from dataclasses import dataclass, field
+from typing import Callable
+
+from facade import Button, HeadingTwoText, MenuType
+
+@dataclass(kw_only=True)
+class GameOver(MenuType):
+    on_retry: Callable = field(default=lambda: None)
+
+    def __post_init__(self):
+        self.root_elements = [
+            HeadingTwoText(text="Game Over"),
+            Button(label=Button.ButtonText(text="RETRY"), action=self.on_retry),
+        ]
+        super().__post_init__()
+```
+
+## Elements
+
+Elements are dataclasses describing what to draw; `MenuRenderer` turns them into surfaces. Every element has size, anchor, margin, offset and padding measures (absolute pixels or relative to the parent), justify and alignment, background, border and shadow colours, and visibility.
+
+- Layout: `VerticalDivision` and `HorizontalDivision` (containers with a gap), `Gap` and `Fill`.
+- Text: `Text`, plus the styles `NormalText`, `TitleText`, `SubtitleText`, `HeadingOneText`, `HeadingTwoText` and `HeadingThreeText`. Combine `TextDecorationTypes` flags such as `BOLD | UNDERLINE`.
+- Images: `Image`, drawn from `image_path`.
+- Interactive: `Button`, `Toggle`, `Slider`, `Selector` and `InputField`. Keyboard arrows move the selection, Return activates, and the mouse selects on hover and activates on a second click.
+
+Colours are `"#RRGGBBAA"` strings.
+
+## Fonts and images
+
+Text elements name their font with `font_path`, which defaults to `editundo.ttf`. No fonts ship with Facade; a font that has not been registered falls back to pygame's default font. Register a folder of `.ttf` or `.otf` files, which are looked up by lower-cased file name:
+
+```python
+ui.fonts.add_dir("assets/fonts")
+```
+
+`Image` elements are loaded from `image_path` on first use and cached; `ui.images.add_dir("assets/images")` preloads a folder.
+
+## Project layout
+
+- [src/facade/interface.py](src/facade/interface.py): `Interface`, the object a game uses.
+- [src/facade/elements.py](src/facade/elements.py): element dataclasses and attribute types.
+- [src/facade/menus.py](src/facade/menus.py): `MenuType` and the built-in menus.
+- [src/facade/manager.py](src/facade/manager.py): the menu stack and per-event input handlers.
+- [src/facade/renderer.py](src/facade/renderer.py): `MenuRenderer`, which draws a menu into the GUI surface.
+- [src/facade/assets.py](src/facade/assets.py): font and image caches.
+- [examples/](examples/): the demo game and the settings it edits.
+- [tests/](tests/): headless tests using SDL's dummy video driver.
