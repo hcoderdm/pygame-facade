@@ -110,11 +110,13 @@ class MenuRenderer:
         self._text_cache: dict[tuple, pygame.Surface] = {}
         self._hex_color_cache: dict[str, pygame.Color] = {}
         self._menu_surf_cache: pygame.Surface | None = None
+        self._canvas_serial: int = 0  # Increments every time the canvas is rebuilt
         self._last_version: int = -1
         self._last_display_size: tuple[int, int] = (0, 0)
         self._last_menu: object = None
+        self._drawn_cursors: list[tuple[InputField, str]] = []  # Cursor glyphs drawn into the canvas
 
-        # Final GUI surface, re-blitted only when the view (scroll, cursor) changes
+        # Final GUI surface, re-blitted only when the view (scroll) changes
         self._output_cache: pygame.Surface | None = None
         self._output_key: tuple | None = None
 
@@ -130,13 +132,23 @@ class MenuRenderer:
 
         display_pw, display_ph = size
 
-        # Compose and render the menu tree, skipping if nothing has changed
-        can_use_cache = self._menu_surf_cache is not None and Element._iterative_version == self._last_version and (display_pw, display_ph) == self._last_display_size and menu is self._last_menu
+        # Compose and render the menu tree, skipping if nothing has changed.
+        # An open input field's cursor glyph is drawn into the canvas, so the
+        # canvas is also rebuilt when a drawn glyph blinks
+        can_use_cache = (
+            self._menu_surf_cache is not None
+            and Element._iterative_version == self._last_version
+            and (display_pw, display_ph) == self._last_display_size
+            and menu is self._last_menu
+            and all(field.get_cursor() == glyph for field, glyph in self._drawn_cursors)
+        )
         if not can_use_cache:
+            self._drawn_cursors = []
             menu_tree = self._compose_menu_tree(menu, display_pw, display_ph)
             self._menu_tree_cache = menu_tree
             self._collect_element_layout(menu_tree)
             self._menu_surf_cache = self._render_element_tree(menu_tree)
+            self._canvas_serial += 1
             self._last_version = Element._iterative_version
             self._last_display_size = (display_pw, display_ph)
             self._last_menu = menu
@@ -149,10 +161,8 @@ class MenuRenderer:
         menu._scroll = min(max(menu._scroll, 0.0), float(max_scroll))
         scroll_y = int(round(menu._scroll))
 
-        # Reuse the last GUI surface unless the visible content changed
-        selected = menu.get_selected_element()
-        cursor = selected.get_cursor() if isinstance(selected, InputField) else ""
-        output_key = (id(menu_surf), Element._iterative_version, (display_pw, display_ph), scroll_y, cursor)
+        # Reuse the last GUI surface unless the canvas or the view changed
+        output_key = (self._canvas_serial, (display_pw, display_ph), scroll_y)
         if self._output_cache is not None and output_key == self._output_key:
             return self._output_cache
 
@@ -703,7 +713,9 @@ class MenuRenderer:
         """ """
         is_selected = selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
-        text_child = replace(element.value, text=element.get_field() + element.get_cursor())
+        cursor = element.get_cursor()
+        self._drawn_cursors.append((element, cursor))  # Redraw when this glyph blinks
+        text_child = replace(element.value, text=element.get_field() + cursor)
         eff_value_child = replace(text_child, text_decorations=TextDecorationTypes.ITALIC | TextDecorationTypes.ANTIALIASING) if element.is_open else replace(text_child, text_color=element.edited_text_color) if element.is_opened else text_child
         eff_value_child = replace(eff_value_child, text_color=element.invalid_text_color) if not element.authenticate() else replace(eff_value_child, text_color=element.edited_text_color) if element.is_altered() else eff_value_child
         text_selection_id = eff_element.label.id if is_selected else selection_id

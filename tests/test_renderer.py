@@ -2,11 +2,18 @@
 Renderer output format and caching.
 """
 
+import time
 from types import SimpleNamespace
 
-from facade import Element, Interface, NormalText, Pause, Settings, Start
+import pygame
+
+from facade import Element, InputField, Interface, NormalText, Pause, Settings, Start
 
 SIZE = (800, 600)
+
+
+def pixels(surface):
+    return pygame.image.tobytes(surface, "RGBA")
 
 
 def counting_recomposes(ui):
@@ -48,3 +55,21 @@ def test_two_interfaces_keep_their_own_caches():
         b.render()
 
     assert (len(calls_a), len(calls_b)) == (1, 1)
+
+
+def test_open_input_field_cursor_blinks_on_screen(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    menu = Settings(settings=SimpleNamespace(NAME="PLAYER"))
+    field = next(e for e in menu._selectable_elements if isinstance(e, InputField))
+    ui = Interface(size=SIZE)
+    ui.push(menu)
+    menu.select_element_by_id(field.id)
+    field.open()
+
+    shown = pixels(ui.render())
+    assert ui.render() is ui.render()  # Steady while the glyph is unchanged
+    now[0] += InputField._cursor_period
+    hidden = pixels(ui.render())
+
+    assert shown != hidden
