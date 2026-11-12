@@ -154,7 +154,7 @@ consistent interface for layout and appearance customization.
 """
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Element(ABC):
     """
     Represents an abstract UI element with configurable layout, appearance,
@@ -202,9 +202,11 @@ class Element(ABC):
     _interaction_target: Element | None = None
     _iterative_version: ClassVar[int] = 0
 
-    # TODO: No idea why this is not working
-    def __repr__(self):
-        return self.__class__.__name__  # Only prints the name attribute
+    # Element dataclasses are declared with repr=False; otherwise @dataclass
+    # would generate a field-by-field __repr__ for every subclass, replacing
+    # this one and printing whole element trees
+    def __repr__(self) -> str:
+        return f"{type(self).__qualname__}(id={self.id!r})"
 
     def __setattr__(self, name, value):
         if hasattr(self, name) and getattr(self, name) != value:
@@ -217,7 +219,7 @@ Element modifiers.
 """
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class SelectedModifier(Element):
     """Per-element overrides applied when the element is the current selection.
 
@@ -234,7 +236,7 @@ Non-visual components.
 """
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Division(Element):
     """
     Represents a container element that groups multiple Element instances
@@ -254,7 +256,7 @@ class Division(Element):
     is_expandable: bool = False
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class HorizontalDivision(Division):
     """
     Represents a horizontal division, inheriting from Division. This class
@@ -265,7 +267,7 @@ class HorizontalDivision(Division):
     pass
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class VerticalDivision(Division):
     """
     Represents a specialized Division that models a vertical partition;
@@ -279,7 +281,7 @@ class VerticalDivision(Division):
 VerticalDivision()
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Gap(Element):
     """
     Represents a layout element with configurable anchor, margin, offset,
@@ -300,7 +302,7 @@ class Gap(Element):
     is_expandable: bool = False
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Fill(Element):
     """"""
 
@@ -318,7 +320,7 @@ experience by providing context and organization to interactive components.
 """
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Text(Element):
     """
     Represents a text element with customizable content, color, background,
@@ -341,7 +343,7 @@ class Text(Element):
     is_wrapable: bool = False
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class NormalText(Text):
     """
     Represents a text element with a default font size of 18, a light gray
@@ -353,7 +355,7 @@ class NormalText(Text):
     text_decorations: TextDecorationTypes = TextDecorationTypes.BOLD
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class TitleText(Text):
     """
     Represents a styled text element for titles, extending Text with a
@@ -366,7 +368,7 @@ class TitleText(Text):
     text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class SubtitleText(Text):
     """
     Represents styled subtitle text with customizable font_size, text_color,
@@ -380,7 +382,7 @@ class SubtitleText(Text):
     text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class HeadingOneText(Text):
     """
     Represents a level-one heading text style with customizable font, size,
@@ -396,7 +398,7 @@ class HeadingOneText(Text):
     text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class HeadingTwoText(Text):
     """
     Represents a level-two heading text style with customizable font, size,
@@ -412,7 +414,7 @@ class HeadingTwoText(Text):
     text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class HeadingThreeText(Text):
     """
     Represents a level-three heading text style with customizable font,
@@ -428,7 +430,7 @@ class HeadingThreeText(Text):
     text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Image(Element):
     """"""
 
@@ -458,7 +460,7 @@ to ensure clear communication of available options and current selections.
 """
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class InteractiveElement(Element):
     """
     All interactive elements have a value and an action function that takes in
@@ -475,7 +477,7 @@ class InteractiveElement(Element):
         return self.action(self.value)
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Button(InteractiveElement):
     """
     Represents a UI button element with customizable label text, appearance,
@@ -484,7 +486,7 @@ class Button(InteractiveElement):
     activated by calling its instance.
     """
 
-    @dataclass(kw_only=True)
+    @dataclass(kw_only=True, repr=False)
     class ButtonText(NormalText):
         """
         Represents styled text for a button, extending NormalText with a larger
@@ -514,11 +516,11 @@ class Button(InteractiveElement):
         return self.action()
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Toggle(InteractiveElement):
     """An on/off boolean switch."""
 
-    @dataclass(kw_only=True)
+    @dataclass(kw_only=True, repr=False)
     class ToggleText(NormalText):
         """"""
 
@@ -555,7 +557,7 @@ class Toggle(InteractiveElement):
         return self.action(self.value)
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Slider(InteractiveElement):
     """A numeric range adjusted with left/right."""
 
@@ -577,10 +579,10 @@ class Slider(InteractiveElement):
         self.action(self.value)
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Selector(InteractiveElement):
 
-    @dataclass(kw_only=True)
+    @dataclass(kw_only=True, repr=False)
     class LeftShiftArrow(NormalText):
         """"""
 
@@ -588,7 +590,7 @@ class Selector(InteractiveElement):
         font_size: int = int(18 * 0.75)
         text_color: RGBA = "#F0F0F0FF"
 
-    @dataclass(kw_only=True)
+    @dataclass(kw_only=True, repr=False)
     class RightShiftArrow(NormalText):
         """"""
 
@@ -596,7 +598,7 @@ class Selector(InteractiveElement):
         font_size: int = int(18 * 0.75)
         text_color: RGBA = "#F0F0F0FF"
 
-    @dataclass(kw_only=True)
+    @dataclass(kw_only=True, repr=False)
     class SelectionText(NormalText):
         """"""
 
@@ -678,10 +680,10 @@ class Selector(InteractiveElement):
             self.is_open = False
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class InputField(InteractiveElement):
 
-    @dataclass(kw_only=True)
+    @dataclass(kw_only=True, repr=False)
     class InputHintText(NormalText):
         """
         Represents a styled hint text for input fields, with customizable text,
@@ -694,7 +696,7 @@ class InputField(InteractiveElement):
         text_color: RGBA = "#30384EFF"
         text_decorations: TextDecorationTypes = TextDecorationTypes.ITALIC | TextDecorationTypes.ANTIALIASING
 
-    @dataclass(kw_only=True)
+    @dataclass(kw_only=True, repr=False)
     class InputValueText(NormalText):
         """
         Represents a styled text input value with a customizable font_size and
