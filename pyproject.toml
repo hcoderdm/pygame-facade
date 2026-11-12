@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,8 +7,13 @@ name = "facade"
 version = "0.1.0"
 description = "Menu and UI overlay toolkit for pygame-ce games."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = ["pygame-ce>=2.5"]
+
+[project.urls]
+Repository = "https://github.com/hcoderdm/pygame-facade"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
