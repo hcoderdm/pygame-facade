@@ -2,12 +2,13 @@
 Renderer output format and caching.
 """
 
+from dataclasses import dataclass
 import time
 from types import SimpleNamespace
 
 import pygame
 
-from facade import About, Element, InputField, Interface, NormalText, Pause, Settings, Start
+from facade import About, Element, InputField, Interface, MenuType, NormalText, Pause, Settings, Start
 
 SIZE = (800, 600)
 
@@ -96,3 +97,28 @@ def test_recomposing_gives_identical_pixels():
     Element._iterative_version += 1  # Force a full recompose with warm caches
 
     assert pixels(ui.render()) == first
+
+
+def test_opaque_menu_is_returned_without_per_pixel_alpha():
+    ui = Interface(size=SIZE)
+    ui.push(Start())
+
+    surface = ui.render()
+
+    assert surface.get_size() == SIZE
+    assert not surface.get_flags() & pygame.SRCALPHA
+    assert surface.get_at((0, 0)) == pygame.Color("#0C0E14FF")  # Start's background
+
+
+def test_menu_smaller_than_window_keeps_alpha():
+    @dataclass(kw_only=True)
+    class Panel(MenuType):
+        root_size: tuple[float, float] = (0.5, 0.5)
+
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[NormalText(text="hi")]))
+
+    surface = ui.render()
+
+    assert surface.get_flags() & pygame.SRCALPHA
+    assert surface.get_at((SIZE[0] - 1, SIZE[1] - 1)).a == 0

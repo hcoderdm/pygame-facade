@@ -108,10 +108,10 @@ class ContentNode:
     instances.
 
     ``is_empty`` marks a surface known to be fully transparent, which is
-    never blitted.
+    never blitted. ``is_opaque`` marks a surface known to be fully opaque.
     """
 
-    __slots__ = ("element", "surf", "offset", "children", "is_empty", "_extent")
+    __slots__ = ("element", "surf", "offset", "children", "is_empty", "is_opaque", "_extent")
 
     def __init__(self, element=None, surf=None, offset=None, children=None, is_empty=False):
         self.element: Element = element if element is not None else _NULL_ELEMENT
@@ -119,6 +119,7 @@ class ContentNode:
         self.offset: tuple[int, int] = offset or (0, 0)
         self.children: list[ContentNode] = children or []
         self.is_empty: bool = is_empty
+        self.is_opaque: bool = False
         self._extent: tuple[int, int] | None = None
 
     def extent(self) -> tuple[int, int]:
@@ -183,6 +184,7 @@ class MenuRenderer:
         self._menu_rect_cache: list[tuple[Element, pygame.Rect, int]] = []  # (element, rect, depth)
         self._hex_color_cache: dict[str, pygame.Color] = {}
         self._menu_surf_cache: pygame.Surface | None = None
+        self._canvas_opaque: bool = False
         self._canvas_serial: int = 0  # Increments every time the canvas is rebuilt
         self._last_version: int = -1
         self._last_display_size: tuple[int, int] = (0, 0)
@@ -200,12 +202,15 @@ class MenuRenderer:
 
     def render(self, menu: MenuType, size: tuple[int, int]) -> pygame.Surface:
         """
-        Return a ``size``-sized ``SRCALPHA`` surface showing ``menu``.
+        Return a ``size``-sized surface showing ``menu``.
 
-        Pixels outside the menu are fully transparent, and the menu's own
-        alpha (e.g. a half-transparent Pause background) is kept, so the
-        surface can be blitted at ``(0, 0)`` over the game's frame. The same
-        surface object is returned while nothing has changed.
+        When the menu paints every pixel of the window opaquely (``Start``,
+        ``Settings``, ``About``) the surface has no per-pixel alpha, which
+        makes the game's blit a plain copy. Otherwise it is ``SRCALPHA``:
+        pixels outside the menu are fully transparent and the menu's own
+        alpha (e.g. a translucent Pause background) is kept. Either way it
+        is blitted at ``(0, 0)`` over the game's frame. The same surface
+        object is returned while nothing has changed.
         """
 
         display_pw, display_ph = size
@@ -226,6 +231,7 @@ class MenuRenderer:
             self._menu_tree_cache = menu_tree
             self._collect_element_layout(menu_tree)
             self._menu_surf_cache = self._render_element_tree(menu_tree)
+            self._canvas_opaque = menu_tree.is_opaque
             self._canvas_serial += 1
             self._last_version = Element._iterative_version
             self._last_display_size = (display_pw, display_ph)
@@ -244,13 +250,19 @@ class MenuRenderer:
         if self._output_cache is not None and output_key == self._output_key:
             return self._output_cache
 
-        # Copy the visible part exactly; MAX against a zeroed surface avoids
-        # darkening semi-transparent pixels as a normal alpha blit would
-        output = pygame.Surface((display_pw, display_ph), pygame.SRCALPHA)
         view_rect = pygame.Rect(0, scroll_y, display_pw, display_ph)
         source_rect = view_rect.clip(menu_surf.get_rect())
-        if source_rect.width > 0 and source_rect.height > 0:
-            output.blit(menu_surf, (0, 0), source_rect, special_flags=pygame.BLEND_RGBA_MAX)
+
+        # An opaque canvas covering the window needs no per-pixel alpha; in
+        # the display's format the game's blit becomes a copy instead of a blend
+        if self._canvas_opaque and source_rect.size == (display_pw, display_ph):
+            output = menu_surf.subsurface(source_rect).convert()
+        else:
+            # Copy the visible part exactly; MAX against a zeroed surface avoids
+            # darkening semi-transparent pixels as a normal alpha blit would
+            output = pygame.Surface((display_pw, display_ph), pygame.SRCALPHA)
+            if source_rect.width > 0 and source_rect.height > 0:
+                output.blit(menu_surf, (0, 0), source_rect, special_flags=pygame.BLEND_RGBA_MAX)
 
         self._draw_scrollbar(output, content_height, display_ph, scroll_y, max_scroll)
 
@@ -459,16 +471,26 @@ class MenuRenderer:
         if content_height <= viewport_height:
             return
 
+        # pygame.draw writes colours without blending. On a transparent
+        # viewport that leaves the bar translucent over the game; on an opaque
+        # one the bar is drawn on its own strip and blended over the menu
+        blend = not viewport.get_flags() & pygame.SRCALPHA
         track_x = viewport.get_width() - _SCROLLBAR_WIDTH
-        track_rect = pygame.Rect(track_x, 0, _SCROLLBAR_WIDTH, viewport_height)
-        pygame.draw.rect(viewport, "#181C2780", track_rect)
+        target = pygame.Surface((_SCROLLBAR_WIDTH, viewport_height), pygame.SRCALPHA) if blend else viewport
+        origin_x = 0 if blend else track_x
+
+        track_rect = pygame.Rect(origin_x, 0, _SCROLLBAR_WIDTH, viewport_height)
+        pygame.draw.rect(target, "#181C2780", track_rect)
 
         thumb_height = max(_SCROLLBAR_MIN_HEIGHT, int(track_rect.height * (viewport_height / content_height)))
         thumb_travel = track_rect.height - thumb_height
         thumb_offset = 0 if max_scroll == 0 else int((scroll_y / max_scroll) * thumb_travel)
-        thumb_rect = pygame.Rect(track_x, track_rect.y + thumb_offset, _SCROLLBAR_WIDTH, thumb_height)
-        pygame.draw.rect(viewport, "#30384E80", thumb_rect)
-        pygame.draw.rect(viewport, "#60606080", thumb_rect, 1)
+        thumb_rect = pygame.Rect(origin_x, track_rect.y + thumb_offset, _SCROLLBAR_WIDTH, thumb_height)
+        pygame.draw.rect(target, "#30384E80", thumb_rect)
+        pygame.draw.rect(target, "#60606080", thumb_rect, 1)
+
+        if blend:
+            viewport.blit(target, (track_x, 0))
 
     """
     Menu and element composition.
@@ -636,6 +658,19 @@ class MenuRenderer:
             (offset_pw, offset_ph),
             children=[content_node],
             is_empty=border_color is None and bg_color is None,
+        )
+
+        # Whether every pixel of the box is painted opaquely
+        painted = border_rect if border_color is not None else background_rect
+        element_node.is_opaque = (
+            final_pw > 0
+            and final_ph > 0
+            and margin_pw == 0
+            and margin_ph == 0
+            and painted.size == (final_pw, final_ph)
+            and (border_color is None or border_color.a == 255)
+            and (background_rect.width <= 0 or background_rect.height <= 0 or (bg_color is not None and bg_color.a == 255))
+            and element.rotation == RotationType.NONE
         )
 
         # TODO: Should be fixed to function correctly

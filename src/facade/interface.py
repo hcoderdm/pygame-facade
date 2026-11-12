@@ -140,8 +140,10 @@ class Interface:
     def render(self) -> pygame.Surface | None:
         """
         Return the GUI surface for the top menu, or ``None`` when no menu is
-        open. The surface is ``SRCALPHA`` and transparent outside the menu;
-        the same surface is returned while nothing visible has changed.
+        open. A menu that paints the whole window opaquely comes back without
+        per-pixel alpha, so blitting it is a plain copy; otherwise the surface
+        is ``SRCALPHA`` and transparent outside the menu. The same surface is
+        returned while nothing visible has changed.
         """
         menu = self.manager.top()
         if menu is None:
