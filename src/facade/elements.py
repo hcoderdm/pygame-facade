@@ -42,6 +42,8 @@ WHITE: RGBA = "#FFFFFFFF"
 
 NATIVE_FONT_SIZE: int = 18
 
+_UNSET = object()  # Marks an attribute not yet assigned on an instance
+
 
 """
 Attribute types.
@@ -199,7 +201,11 @@ class Element(ABC):
         return f"{type(self).__qualname__}(id={self.id!r})"
 
     def __setattr__(self, name, value):
-        if hasattr(self, name) and getattr(self, name) != value:
+        # Only a change to an attribute the instance already has is an edit.
+        # The first assignment of each field, in __init__ or replace(), is
+        # construction: creating elements must not invalidate render caches
+        current = self.__dict__.get(name, _UNSET)
+        if current is not _UNSET and current is not value and current != value:
             Element._iterative_version += 1
         object.__setattr__(self, name, value)
 

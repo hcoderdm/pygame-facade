@@ -64,6 +64,15 @@ class ContentNode:
         self.children: list[ContentNode] = children or []
 
 
+def _route_clicks(render_element: Element, target: Element) -> None:
+    """
+    Point hit-tests on ``render_element`` (possibly a selection copy) at the
+    real ``target``. Written past ``Element.__setattr__`` because this is
+    renderer bookkeeping, not an edit, and must not invalidate any cache.
+    """
+    object.__setattr__(render_element, "_interaction_target", target)
+
+
 class MenuRenderer:
     """
     Composes a menu's element tree and returns it as a GUI surface.
@@ -678,7 +687,7 @@ class MenuRenderer:
 
         is_selected = selection_id == element.id
         render_element = element if not is_selected else replace(element, label=replace(element.label, text_color=element.selected_text_color))
-        render_element._interaction_target = element  # ensure clicks map to original element
+        _route_clicks(render_element, element)  # ensure clicks map to original element
 
         text_selection_id = render_element.label.id if is_selected else selection_id
         text_child = self._compose_element_node(render_element.label, range_pw, range_ph, text_selection_id)
@@ -700,7 +709,7 @@ class MenuRenderer:
         text_selection_id = eff_element.label.id if is_selected else selection_id
         hint_node = self._compose_element_node(eff_element.hint, range_pw, range_ph, text_selection_id) if len(element.get_field()) == 0 else None
         text_node = self._compose_element_node(eff_value_child, range_pw, range_ph, text_selection_id)
-        eff_element._interaction_target = element  # ensure clicks map to original element
+        _route_clicks(eff_element, element)  # ensure clicks map to original element
         return ContentNode(eff_element, blank_surf(), children=[hint_node, text_node] if hint_node else [text_node])
 
     def _compose_toggle_node(
@@ -716,7 +725,7 @@ class MenuRenderer:
         eff_label = replace(element.label, text=element.toggled_text) if element.value else element.label
         eff_label = replace(eff_label, text_color=element.edited_text_color) if element.is_called else eff_label
         label_node = self._compose_element_node(eff_label, range_pw, range_ph, selection_id)
-        eff_element._interaction_target = element  # route clicks on children to the toggle
+        _route_clicks(eff_element, element)  # route clicks on children to the toggle
         return ContentNode(eff_element, blank_surf(), children=[label_node])
 
     def _compose_fill_node(
@@ -760,7 +769,7 @@ class MenuRenderer:
     ) -> ContentNode:
         is_selected = selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
-        eff_element._interaction_target = element
+        _route_clicks(eff_element, element)
 
         selection_text = eff_element.selection_text
         selection_text = replace(selection_text, text=element.selection())
