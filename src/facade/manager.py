@@ -121,6 +121,14 @@ Manage input events.
 """
 
 
+def _set_system_cursor(cursor: int) -> None:
+    """Change the system cursor; a platform without system cursors is not an error."""
+    try:
+        pygame.mouse.set_cursor(cursor)
+    except pygame.error:
+        pass
+
+
 def manage_menu_mousemotion(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event, set_cursor: bool = True) -> bool:
     """Select the selectable element under the mouse, if any."""
     if event.type != pygame.MOUSEMOTION:
@@ -129,12 +137,12 @@ def manage_menu_mousemotion(menu: MenuType, renderer: MenuRenderer, event: pygam
     hovered = renderer.find_elements_at(menu, event.pos)
     if hovered != [] and hovered[0].is_selectable:
         if set_cursor:
-            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
+            _set_system_cursor(pygame.SYSTEM_CURSOR_HAND)
         menu.select_element_by_id(hovered[0].id)
         return True
-    
+
     if set_cursor:
-        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+        _set_system_cursor(pygame.SYSTEM_CURSOR_ARROW)
     return False
 
 
