@@ -350,7 +350,7 @@ class NormalText(Text):
 
     font_size: int = 18 * 1
     text_color: RGBA = "#E0E0E0FF"
-    text_format: TextDecorationTypes = TextDecorationTypes.BOLD
+    text_decorations: TextDecorationTypes = TextDecorationTypes.BOLD
 
 
 @dataclass(kw_only=True)
@@ -358,26 +358,26 @@ class TitleText(Text):
     """
     Represents a styled text element for titles, extending Text with a
     larger default font_size, customizable text_color, and optional
-    text_format decoration.
+    text_decorations.
     """
 
     font_size: int = 18 * 4
     text_color: RGBA = WHITE
-    text_format: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
 @dataclass(kw_only=True)
 class SubtitleText(Text):
     """
     Represents styled subtitle text with customizable font_size, text_color,
-    text_background, and text_format. Inherits from Text. Default font size
+    text_background, and text_decorations. Inherits from Text. Default font size
     is 18, with black text on a white background and no text decoration.
     """
 
     font_size: int = 18
     text_color: RGBA = BLACK
     text_background: RGBA = WHITE
-    text_format: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
 @dataclass(kw_only=True)
@@ -393,7 +393,7 @@ class HeadingOneText(Text):
     text_color: RGBA = "#F0B443FF"
     shadow_color: RGBA = "#E6A23EFF"
     shadow_offset: MEASURE = (3.0, 3.0)
-    text_format: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
 @dataclass(kw_only=True)
@@ -409,7 +409,7 @@ class HeadingTwoText(Text):
     text_color: RGBA = "#F0B443FF"
     shadow_color: RGBA = "#E6A23EFF"
     shadow_offset: MEASURE = (2.0, 2.0)
-    text_format: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
 @dataclass(kw_only=True)
@@ -425,7 +425,7 @@ class HeadingThreeText(Text):
     text_color: RGBA = "#F0B443FF"
     shadow_color: RGBA = "#E6A23EFF"
     shadow_offset: MEASURE = (1.0, 1.0)
-    text_format: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
 @dataclass(kw_only=True)
