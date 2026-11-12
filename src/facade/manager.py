@@ -104,8 +104,8 @@ class MenuManager:
         return None
 
     def in_stack(self, menu_type: type[MenuType]) -> bool:
-        """Returns whether a given `menu_type` is in the stack"""
-        return menu_type in self._stack
+        """Returns whether a menu of type `menu_type` is in the stack"""
+        return any(type(menu) is menu_type for menu in self._stack)
 
     def depth_stack(self) -> int:
         """Returns the size of the stack"""
