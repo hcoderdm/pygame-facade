@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pygame
 
-from facade import Element, InputField, Interface, NormalText, Pause, Settings, Start
+from facade import About, Element, InputField, Interface, NormalText, Pause, Settings, Start
 
 SIZE = (800, 600)
 
@@ -73,3 +73,16 @@ def test_open_input_field_cursor_blinks_on_screen(monkeypatch):
     hidden = pixels(ui.render())
 
     assert shown != hidden
+
+
+def test_text_cache_is_bounded_while_resizing():
+    ui = Interface(size=SIZE)
+    ui.push(About())
+    cache = ui.renderer._text_cache
+    cache.max_bytes = 4 * 1024 * 1024
+
+    for width in range(600, 700):
+        ui.resize((width, 600))
+        ui.render()
+
+    assert cache.nbytes <= cache.max_bytes

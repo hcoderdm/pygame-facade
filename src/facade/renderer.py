@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import pygame
 
-from collections import deque
-from collections.abc import Iterable
+from collections import OrderedDict, deque
+from collections.abc import Hashable, Iterable
 from dataclasses import replace
 import math
-from typing import Callable
+from typing import Any, Callable
 
 from .assets import FontManager, ImageManager
 from .elements import (
@@ -48,6 +48,52 @@ _PRECISION = 4
 
 _SCROLLBAR_WIDTH = 10
 _SCROLLBAR_MIN_HEIGHT = 32
+
+# Pixel-memory budgets for the renderer's surface caches
+_TEXT_CACHE_BYTES = 32 * 1024 * 1024
+
+
+class _SurfaceCache:
+    """
+    Least-recently-used cache bounded by the pixel memory of its surfaces,
+    so caches keyed on things like wrap width or typed text cannot grow
+    without limit while the window is resized or a field is edited.
+    """
+
+    def __init__(self, max_bytes: int) -> None:
+        self.max_bytes = max_bytes
+        self._items: OrderedDict[Hashable, tuple[Any, int]] = OrderedDict()
+        self._bytes = 0
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    @property
+    def nbytes(self) -> int:
+        """Approximate pixel memory held, in bytes."""
+        return self._bytes
+
+    def get(self, key: Hashable) -> Any:
+        item = self._items.get(key)
+        if item is None:
+            return None
+        self._items.move_to_end(key)
+        return item[0]
+
+    def put(self, key: Hashable, value: Any, surf: pygame.Surface) -> None:
+        nbytes = surf.get_width() * surf.get_height() * 4
+        old = self._items.pop(key, None)
+        if old is not None:
+            self._bytes -= old[1]
+        self._items[key] = (value, nbytes)
+        self._bytes += nbytes
+        while self._bytes > self.max_bytes and len(self._items) > 1:
+            _, (_, evicted) = self._items.popitem(last=False)
+            self._bytes -= evicted
+
+    def clear(self) -> None:
+        self._items.clear()
+        self._bytes = 0
 
 
 class ContentNode:
@@ -107,7 +153,6 @@ class MenuRenderer:
         # Composed menu, rebuilt only when an element, the size or the menu changes
         self._menu_tree_cache: ContentNode | None = None
         self._menu_rect_cache: list[tuple[Element, pygame.Rect, int]] = []  # (element, rect, depth)
-        self._text_cache: dict[tuple, pygame.Surface] = {}
         self._hex_color_cache: dict[str, pygame.Color] = {}
         self._menu_surf_cache: pygame.Surface | None = None
         self._canvas_serial: int = 0  # Increments every time the canvas is rebuilt
@@ -115,6 +160,9 @@ class MenuRenderer:
         self._last_display_size: tuple[int, int] = (0, 0)
         self._last_menu: object = None
         self._drawn_cursors: list[tuple[InputField, str]] = []  # Cursor glyphs drawn into the canvas
+
+        # Surfaces reused across recomposes
+        self._text_cache = _SurfaceCache(_TEXT_CACHE_BYTES)  # Rendered strings
 
         # Final GUI surface, re-blitted only when the view (scroll) changes
         self._output_cache: pygame.Surface | None = None
@@ -846,7 +894,7 @@ class MenuRenderer:
 
         surf.blit(text, (0, 0))
         surf.set_alpha(text_element.text_alpha)
-        self._text_cache[cache_key] = surf
+        self._text_cache.put(cache_key, surf, surf)
         return surf
 
     def _parse_hex_color(self, rgba: RGBA):
