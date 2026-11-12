@@ -37,6 +37,7 @@ from .elements import (
     Toggle,
     VerticalDivision,
 )
+from .interface import Interface
 from .manager import (
     MenuManager,
     manage_menu_keydown,
@@ -51,6 +52,7 @@ from .renderer import MenuRenderer
 
 
 __all__ = [
+    "Interface",
     # Elements
     "Element",
     "SelectedModifier",

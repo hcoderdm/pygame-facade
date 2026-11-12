@@ -1,18 +1,11 @@
 """
 manager.py
 
-MenuManager - stack-based navigation over Menu dataclasses.
+MenuManager - stack-based navigation over Menu dataclasses - and the
+manage_menu_* functions that apply one pygame event to the top menu.
 
-Usage
------
-from app.menus.manager import manager as menu_manager
-
-menu_manager.register(my_menu)
-menu_manager.push(my_menu)
-
-# In the event loop:
-for event in pygame.event.get():
-    menu_manager.handle_event(event)
+Most projects use these through ``facade.Interface``, which owns a
+MenuManager and a MenuRenderer and dispatches events to these handlers.
 """
 
 import pygame
@@ -25,7 +18,7 @@ from .menus import MenuType
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from renderer.passes.menu_pass import MenuPass
+    from .renderer import MenuRenderer
 
 
 class MenuManager:
@@ -85,9 +78,14 @@ class MenuManager:
         if menu is not None:
             self._stack.append(menu)
 
-    def pop_stack(self) -> MenuType | None:
-        """Pop the top menu from the stack."""
-        if len(self._stack) > 1:
+    def pop_stack(self, keep_root: bool = True) -> MenuType | None:
+        """Pop the top menu from the stack.
+
+        With ``keep_root`` (the default) the bottom menu is never popped, so
+        Escape cannot close e.g. the title screen. Pass ``keep_root=False``
+        to allow emptying the stack.
+        """
+        if len(self._stack) > (1 if keep_root else 0):
             return self._stack.pop()
         return None
 
@@ -123,7 +121,7 @@ Manage input events.
 """
 
 
-def manage_menu_mousemotion(menu: MenuType, renderer: MenuPass, event: pygame.event.Event) -> bool:
+def manage_menu_mousemotion(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event, set_cursor: bool = True) -> bool:
     """"""
     if event.type != pygame.MOUSEMOTION:
         raise ValueError("Improper event handling")
@@ -137,15 +135,17 @@ def manage_menu_mousemotion(menu: MenuType, renderer: MenuPass, event: pygame.ev
 
     hovered = renderer.find_elements_at(menu, event.pos)
     if hovered != [] and hovered[0].is_selectable:
-        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
+        if set_cursor:
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
         menu.select_element_by_id(hovered[0].id)
         return True
     
-    pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+    if set_cursor:
+        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
     return False
 
 
-def manage_menu_mousebuttondown(menu: MenuType, renderer: MenuPass, event: pygame.event.Event) -> bool:
+def manage_menu_mousebuttondown(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
     """"""
     if event.type != pygame.MOUSEBUTTONDOWN:
         raise ValueError("Improper event handling")
@@ -186,7 +186,7 @@ def manage_menu_mousebuttondown(menu: MenuType, renderer: MenuPass, event: pygam
     return True
 
 
-def manage_menu_mousebuttonup(menu: MenuType, renderer: MenuPass, event: pygame.event.Event) -> bool:
+def manage_menu_mousebuttonup(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
     """"""
     if event.type != pygame.MOUSEBUTTONUP:
         raise ValueError("Improper event handling")
@@ -200,7 +200,7 @@ def manage_menu_mousebuttonup(menu: MenuType, renderer: MenuPass, event: pygame.
     return False
 
 
-def manage_menu_mousewheel(menu: MenuType, renderer: MenuPass, event: pygame.event.Event) -> bool:
+def manage_menu_mousewheel(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
     """"""
     if event.type != pygame.MOUSEWHEEL:
         raise ValueError("Improper event handling")
@@ -230,12 +230,12 @@ def manage_menu_mousewheel(menu: MenuType, renderer: MenuPass, event: pygame.eve
             element.decrement()
         return True
     
-    # TODO: Correct Implementation in MenuPass
+    # TODO: Correct Implementation in MenuRenderer
     menu._scroll += -y * 2.0
     return True
 
 
-def manage_menu_keydown(menu: MenuType, renderer: MenuPass, event: pygame.event.Event) -> bool:
+def manage_menu_keydown(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event, manager: MenuManager | None = None) -> bool:
     """"""
     if event.type != pygame.KEYDOWN:
         raise ValueError("Improper event handling")
@@ -293,9 +293,9 @@ def manage_menu_keydown(menu: MenuType, renderer: MenuPass, event: pygame.event.
             return True
 
     # Escape within menu stack
+    # Escape within menu stack; unhandled if there is nothing to go back to
     if key == pygame.K_ESCAPE:
-        menu_manager.pop_stack()
-        return True
+        return manager is not None and manager.pop_stack() is not None
 
     # Navigate between elements
     if key == pygame.K_UP:
@@ -309,7 +309,7 @@ def manage_menu_keydown(menu: MenuType, renderer: MenuPass, event: pygame.event.
     return False
 
 
-def manage_menu_textinput(menu: MenuType, renderer: MenuPass, event: pygame.event.Event) -> bool:
+def manage_menu_textinput(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
     """"""
     if event.type != pygame.TEXTINPUT:
         raise ValueError("Improper event handling")
@@ -323,6 +323,3 @@ def manage_menu_textinput(menu: MenuType, renderer: MenuPass, event: pygame.even
 
     return False
 
-
-# Module-level singleton
-menu_manager: MenuManager = MenuManager()
