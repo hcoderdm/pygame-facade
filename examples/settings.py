@@ -1,5 +1,5 @@
 """
-config.py
+settings.py
 
 User-adjustable runtime settings, edited via the in-game Settings menu.
 

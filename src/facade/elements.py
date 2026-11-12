@@ -16,7 +16,7 @@ import uuid
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from .types import MenuType
+    from .menus import MenuType
 
 
 FLOAT_REGEX = r"^[+-]?(\d+(\.\d*)?|\.\d+)$"

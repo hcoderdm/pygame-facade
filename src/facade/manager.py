@@ -21,7 +21,7 @@ from collections.abc import Iterator
 from typing import cast
 
 from .elements import Button, InputField, Selector, Slider, Toggle
-from .types import MenuType, Pause
+from .menus import MenuType
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
