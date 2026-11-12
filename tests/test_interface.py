@@ -44,7 +44,7 @@ def test_render_returns_window_sized_transparent_surface(ui):
 
     assert surface.get_size() == SIZE
     assert surface.get_flags() & pygame.SRCALPHA
-    assert surface.get_at((SIZE[0] // 2, SIZE[1] - 1)).a == 0x80  # Pause's translucent background
+    assert surface.get_at((SIZE[0] // 2, SIZE[1] - 1)).a == 0xC0  # Pause's translucent background
 
 
 def test_render_reuses_surface_until_something_changes(ui):

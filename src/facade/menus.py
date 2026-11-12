@@ -74,7 +74,7 @@ class MenuType(ABC):
     root_is_flexible: bool = False
     root_is_selectable: bool = False
     root_is_visible: bool = True
-
+ 
     _div: VerticalDivision = field(init=False, repr=False, compare=False)
     _selected_index: int = field(init=False, repr=False, compare=False, default=0)
 
@@ -260,7 +260,7 @@ class Pause(MenuType):
     on_exit: Callable = field(default=lambda: None)
 
     root_alignment: AlignmentType = AlignmentType.MIDTOP
-    root_background_alpha: int = 0x80
+    root_background_alpha: int = 0xC0  # Dims the game behind the menu by three quarters
 
     def __post_init__(self):
         self.root_elements = [
