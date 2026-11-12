@@ -122,16 +122,9 @@ Manage input events.
 
 
 def manage_menu_mousemotion(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event, set_cursor: bool = True) -> bool:
-    """"""
+    """Select the selectable element under the mouse, if any."""
     if event.type != pygame.MOUSEMOTION:
         raise ValueError("Improper event handling")
-
-    # Parse MOUSEMOTION event attributes
-    position = event.pos
-    relative = event.rel
-    is_left, is_middle, is_right = event.buttons
-
-    element = menu.get_selected_element()
 
     hovered = renderer.find_elements_at(menu, event.pos)
     if hovered != [] and hovered[0].is_selectable:
@@ -146,7 +139,7 @@ def manage_menu_mousemotion(menu: MenuType, renderer: MenuRenderer, event: pygam
 
 
 def manage_menu_mousebuttondown(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
-    """"""
+    """Select the clicked element; activate it on a second or double click."""
     if event.type != pygame.MOUSEBUTTONDOWN:
         raise ValueError("Improper event handling")
 
@@ -187,30 +180,20 @@ def manage_menu_mousebuttondown(menu: MenuType, renderer: MenuRenderer, event: p
 
 
 def manage_menu_mousebuttonup(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
-    """"""
+    """Mouse releases are not used by any element; always returns False."""
     if event.type != pygame.MOUSEBUTTONUP:
         raise ValueError("Improper event handling")
-    
-    # Parse MOUSEBUTTONUP event attributes
-    position = event.pos
-    button = event.button
-    is_touch = event.touch
-    element = menu.get_selected_element()
 
     return False
 
 
 def manage_menu_mousewheel(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
-    """"""
+    """Step the selected Selector or Slider, or otherwise scroll the menu."""
     if event.type != pygame.MOUSEWHEEL:
         raise ValueError("Improper event handling")
 
-    # Parse MOUSEWHEEL event attributes
     y = event.y
-    x = event.x
     precise_y = event.precise_y
-    precise_x = event.precise_x
-    is_flipped = event.flipped
 
     element = menu.get_selected_element()
 

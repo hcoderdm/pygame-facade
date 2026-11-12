@@ -107,7 +107,7 @@ class ImageManager:
         try:
             surf = pygame.image.load(path)
             surf = surf.convert_alpha()
-        except Exception as exception:
+        except Exception:
             surf = self.placeholder
         self._cache[key] = surf
 

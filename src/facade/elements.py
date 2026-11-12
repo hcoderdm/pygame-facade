@@ -7,17 +7,10 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass, field
 from enum import Enum, Flag, auto
-from itertools import count
-import math
 import re
 import time
-from typing import Callable, ClassVar, Any
-from typing import Annotated, ClassVar
+from typing import Annotated, Any, Callable, ClassVar
 import uuid
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from .menus import MenuType
 
 
 FLOAT_REGEX = r"^[+-]?(\d+(\.\d*)?|\.\d+)$"
@@ -49,9 +42,6 @@ WHITE: RGBA = "#FFFFFFFF"
 
 NATIVE_FONT_SIZE: int = 18
 
-"#AABBCCDD"
-"#30364E"
-"#2F2F47"
 
 """
 Attribute types.
@@ -277,8 +267,6 @@ class VerticalDivision(Division):
 
     pass
 
-
-VerticalDivision()
 
 
 @dataclass(kw_only=True, repr=False)

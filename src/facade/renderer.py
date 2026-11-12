@@ -46,9 +46,7 @@ if TYPE_CHECKING:
 
 _PRECISION = 4
 
-_SCROLL_VELOCITY_EPS = 0.05
 _SCROLLBAR_WIDTH = 10
-_SCROLLBAR_PADDING = 4
 _SCROLLBAR_MIN_HEIGHT = 32
 
 
@@ -170,7 +168,6 @@ class MenuRenderer:
             return
 
         _SCROLL_ACCEL = 10000.0  # pixels/s^2 applied per wheel notch
-        _SCROLL_DRAG = 0.0  # drag coefficient for velocity decay
 
         display_pw, display_ph = display_size
         menu_tree = self._menu_tree_cache
