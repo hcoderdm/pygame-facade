@@ -17,9 +17,19 @@ import settings  # examples/settings.py, edited live by the Settings menu
 from facade import About, Interface, Pause, Settings, Start
 
 
+def draw_fps(screen: pygame.Surface, font: pygame.font.Font, fps: float) -> None:
+    """Draw an FPS readout in a black box at the top right of the window."""
+    padding = 8
+    text = font.render(f"{fps:.0f} FPS", True, (240, 240, 240))
+    box = pygame.Rect(0, 0, text.get_width() + 2 * padding, text.get_height() + 2 * padding)
+    box.topright = (screen.get_width() - padding, padding)
+    pygame.draw.rect(screen, (0, 0, 0), box)
+    screen.blit(text, (box.left + padding, box.top + padding))
+
+
 def main() -> None:
     pygame.init()
-    screen = pygame.display.set_mode((800, 600))
+    screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
     pygame.display.set_caption("facade demo")
     clock = pygame.time.Clock()
 
@@ -30,6 +40,7 @@ def main() -> None:
     ui = Interface(size=screen.get_size())
     # Register the bundled pixel font; Text elements default to "editundo.ttf".
     ui.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
+    fps_font = pygame.font.Font(None, 16)
 
     def quit_game() -> None:
         nonlocal running
@@ -57,6 +68,8 @@ def main() -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.VIDEORESIZE:
+                ui.resize(event.size)  # Keep the GUI surface the size of the window
             elif ui.handle_event(event):
                 continue  # The menu used this event
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -69,16 +82,18 @@ def main() -> None:
         # Update the game only while no menu is open
         if not ui.is_open:
             ball += velocity * dt
-            if not 20 <= ball.x <= 780:
-                velocity.x *= -1
-            if not 20 <= ball.y <= 580:
-                velocity.y *= -1
+            width, height = screen.get_size()
+            if ball.x < 20 or ball.x > width - 20:
+                velocity.x = abs(velocity.x) if ball.x < 20 else -abs(velocity.x)
+            if ball.y < 20 or ball.y > height - 20:
+                velocity.y = abs(velocity.y) if ball.y < 20 else -abs(velocity.y)
 
         # Draw the game, then the GUI over it
         screen.fill((24, 64, 48))
         pygame.draw.circle(screen, (230, 190, 60), ball, 20)
         if (gui := ui.render()) is not None:
             screen.blit(gui, (0, 0))
+            draw_fps(screen, fps_font, clock.get_fps())
         pygame.display.flip()
 
     pygame.quit()
