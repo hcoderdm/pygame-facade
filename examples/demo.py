@@ -9,6 +9,8 @@ Run from the repository root after `pip install -e .`:
     python examples/demo.py
 """
 
+from pathlib import Path
+
 import pygame
 
 import settings  # examples/settings.py, edited live by the Settings menu
@@ -26,7 +28,8 @@ def main() -> None:
     velocity = pygame.Vector2(240, 180)
 
     ui = Interface(size=screen.get_size())
-    # ui.fonts.add_dir("assets/fonts")  # Register your own fonts, e.g. editundo.ttf
+    # Register the bundled pixel font; Text elements default to "editundo.ttf".
+    ui.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
 
     def quit_game() -> None:
         nonlocal running
