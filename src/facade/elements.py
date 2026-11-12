@@ -334,13 +334,14 @@ class Text(Element):
 @dataclass(kw_only=True, repr=False)
 class NormalText(Text):
     """
-    Represents a text element with a default font size of 18, a light gray
-    color (#E0E0E0FF), and bold formatting. Inherits from Text.
+    Represents a text element with a default font size of 18 and a light
+    gray color (#E0E0E0FF). Inherits from Text.
     """
 
     font_size: int = 18 * 1
     text_color: RGBA = "#E0E0E0FF"
-    text_decorations: TextDecorationTypes = TextDecorationTypes.BOLD
+    # Plain weight: pygame's synthetic bold thickens the pixel font's strokes
+    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
 
 
 @dataclass(kw_only=True, repr=False)
