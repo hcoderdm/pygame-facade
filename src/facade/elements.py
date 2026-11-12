@@ -10,6 +10,7 @@ from enum import Enum, Flag, auto
 from itertools import count
 import math
 import re
+import time
 from typing import Callable, ClassVar, Any
 from typing import Annotated, ClassVar
 import uuid
@@ -722,9 +723,9 @@ class InputField(InteractiveElement):
     is_open: bool = field(default=False, init=False, repr=False)
     _open_buffer: str = field(default="", init=False, repr=False)  # Internal buffer for text being edited
 
-    _frames = ["_", ""]
-    _frame_duration: float = 0.5
-    _current_frame: int = 0
+    _cursor_frames: ClassVar[tuple[str, ...]] = ("_", "")  # Cursor glyphs cycled while editing
+    _cursor_period: ClassVar[float] = 0.5  # Seconds each cursor glyph is shown
+    _cursor_epoch: float = field(default=0.0, init=False, repr=False)  # Time the blink cycle last restarted
 
     def authenticate(self) -> bool:
         """"""
@@ -735,16 +736,15 @@ class InputField(InteractiveElement):
         return self._open_buffer if self.is_open else self.value.text
 
     def get_cursor(self) -> str:
-        """"""
+        """Return the blinking cursor glyph for the current time, or "" when closed."""
         if not self.is_open:
             return ""
-        from config import FPS
+        elapsed = time.monotonic() - self._cursor_epoch
+        return self._cursor_frames[int(elapsed / self._cursor_period) % len(self._cursor_frames)]
 
-        repeats = max(1, round(self._frame_duration * FPS))
-        stretched_frames = [f for f in self._frames for _ in range(repeats)]
-        frame = stretched_frames[self._current_frame % len(stretched_frames)]
-        self._current_frame = (self._current_frame + 1) % len(stretched_frames)
-        return frame
+    def _restart_cursor(self) -> None:
+        """Show the cursor immediately, e.g. after a keystroke."""
+        self._cursor_epoch = time.monotonic()
 
     def is_altered(self) -> bool:
         """"""
@@ -763,19 +763,19 @@ class InputField(InteractiveElement):
         """Enter edit mode, copying the current value to the edit buffer."""
         self.is_open = True
         self._open_buffer = self.value.text
-        self._current_frame = 0
+        self._restart_cursor()
 
     def append(self, character: str) -> None:
         """Add a character to the edit buffer if currently editing."""
         if self.is_open:
             self._open_buffer += character.upper()
-        self._current_frame = 0
+        self._restart_cursor()
 
     def truncate(self) -> None:
         """Remove the last character from the edit buffer if currently editing."""
         if self.is_open and self._open_buffer:
             self._open_buffer = self._open_buffer[:-1]
-        self._current_frame = 0
+        self._restart_cursor()
 
     def cancel(self) -> None:
         """Discard the edit buffer and exit edit mode without saving."""

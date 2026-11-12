@@ -274,12 +274,17 @@ class Pause(MenuType):
 @dataclass(kw_only=True)
 class Settings(MenuType):
     """Settings menu - dynamically generates editors for each uppercase
-    variable in the config module."""
+    attribute of ``settings`` (a module, namespace or other object).
 
+    Edits are written straight back with ``setattr``. Enum and bool values
+    are edited with a Selector; int, float and str values with an InputField.
+    """
+
+    settings: Any  # Object whose UPPERCASE attributes are edited in place
     on_return: Callable = field(default=lambda: None)
 
     def __post_init__(self):
-        import config
+        config = self.settings
 
         def _pick_validator(value: object) -> tuple[str, Callable[[str], object]]:
             if isinstance(value, int) and not isinstance(value, bool):
