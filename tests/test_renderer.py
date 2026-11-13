@@ -7,7 +7,7 @@ import time
 
 import pygame
 
-from facade import Element, InputField, Interface, Menu, NormalText
+from facade import AlignmentType, Button, Element, InputField, Interface, Menu, NormalText
 from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
@@ -122,3 +122,48 @@ def test_menu_smaller_than_window_keeps_alpha():
 
     assert surface.get_flags() & pygame.SRCALPHA
     assert surface.get_at((SIZE[0] - 1, SIZE[1] - 1)).a == 0
+
+
+@dataclass(kw_only=True)
+class Panel(Menu):
+    """A bare menu for the layout rules below."""
+
+
+def hit_rect_of(ui, element):
+    return next(rect for hit, rect in ui.renderer._menu_tree.hit_rects if hit is element)
+
+
+def test_scrolling_reuses_the_tree():
+    ui = Interface(size=(800, 120))
+    menu = Panel(root_elements=[NormalText(text=f"line {i}") for i in range(20)])
+    ui.push(menu)
+    calls = counting_recomposes(ui)
+    first = ui.render()
+
+    menu._scroll = 50.0
+    scrolled = ui.render()
+
+    assert scrolled is not first
+    assert len(calls) == 1
+
+
+def test_fixed_element_is_hit_where_it_is_aligned():
+    marker = NormalText(text="x", is_fixed=True, is_selectable=True, alignment=AlignmentType.BOTTOMRIGHT)
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[marker]))
+    ui.render()
+
+    assert hit_rect_of(ui, marker).bottomright == SIZE
+
+
+def test_offset_moves_the_box():
+    def placed(offset):
+        button = Button(label=Button.ButtonText(text="GO"), offset=offset)
+        ui = Interface(size=SIZE)
+        ui.push(Panel(root_elements=[button]))
+        ui.render()
+        return hit_rect_of(ui, button)
+
+    plain, moved = placed((0.0, 0.0)), placed((10.0, 5.0))
+
+    assert (moved.x, moved.y, moved.size) == (plain.x + 10, plain.y + 5, plain.size)
