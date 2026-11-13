@@ -14,7 +14,7 @@ from pathlib import Path
 import pygame
 
 import settings  # examples/settings.py, edited live by the Settings menu
-from facade import Interface
+from facade import DebugRenderer, Interface, MenuRenderer
 from menus import About, Pause, Settings, Start  # examples/menus.py, this game's screens
 
 
@@ -39,9 +39,18 @@ def main() -> None:
     velocity = pygame.Vector2(240, 180)
 
     interface = Interface(size=screen.get_size())
+    # A renderer with debugging aids that the keys below switch on
+    debug = DebugRenderer(MenuRenderer())
+    interface.renderer = debug
     # Register the bundled pixel font; Text elements default to "editundo.ttf".
     interface.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
     fps_font = pygame.font.Font(None, 16)
+
+    debug_keybinds = {
+        pygame.K_F3: debug.toggle_stats_overlay,
+        pygame.K_F4: debug.toggle_hover_border,
+        pygame.K_F5: debug.toggle_hit_rects,
+    }
 
     def quit_game() -> None:
         nonlocal running
@@ -71,6 +80,8 @@ def main() -> None:
                 running = False
             elif event.type == pygame.VIDEORESIZE:
                 interface.resize(event.size)  # Keep the GUI surface the size of the window
+            elif event.type == pygame.KEYDOWN and event.key in debug_keybinds:
+                debug_keybinds[event.key]()  # Checked before the menu so debug keys work while typing too
             elif interface.handle_event(event):
                 continue  # The menu used this event
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:

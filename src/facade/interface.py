@@ -35,7 +35,7 @@ from .manager import (
     handle_menu_textinput,
 )
 from .menus import Menu
-from .renderer import MenuRenderer
+from .renderer import DebugRenderer, MenuRenderer
 
 
 class Interface:
@@ -56,7 +56,7 @@ class Interface:
         self.size: tuple[int, int] = (int(size[0]), int(size[1]))
         self.use_hand_cursor: bool = use_hand_cursor
         self.manager: MenuManager = MenuManager()
-        self.renderer: MenuRenderer = MenuRenderer()
+        self.renderer: MenuRenderer | DebugRenderer = MenuRenderer()
 
         self._event_handlers: dict[int, Callable[[Menu, pygame.event.Event], bool]] = {
             pygame.MOUSEMOTION: lambda menu, event: handle_menu_mousemotion(menu, self.renderer, event, use_hand_cursor=self.use_hand_cursor),

@@ -11,6 +11,7 @@ from collections.abc import Hashable
 from dataclasses import dataclass, field, replace
 from functools import singledispatchmethod
 import math
+import time
 from typing import Any, NamedTuple
 
 from .assets import FontManager, ImageManager
@@ -51,6 +52,11 @@ _SCROLLBAR_MIN_PH = 32
 _TEXT_CACHE_BYTES = 32 * 1024 * 1024
 _BOX_CACHE_BYTES = 32 * 1024 * 1024
 _SHADOW_CACHE_BYTES = 16 * 1024 * 1024
+
+_DEBUG_SAMPLE_SECONDS = 0.5
+_DEBUG_PADDING = 6
+_DEBUG_BORDER_THICKNESS = 2
+_DEBUG_HIT_RECT_COLOR = "#00FF80FF"
 
 _ROTATION_DEGREES = {RotationType.LEFT: 90, RotationType.RIGHT: -90, RotationType.UPTURNED: 180}
 
@@ -239,6 +245,7 @@ class _MenuTree:
     root: Node | None = None
     rendered_glyphs: list[tuple[InputField, str]] = field(default_factory=list)
     hit_rects: list[tuple[Element, pygame.Rect]] = field(default_factory=list)
+    element_rects: list[tuple[Element, pygame.Rect]] = field(default_factory=list)
     facade_surf: pygame.Surface | None = None
     output_surf: pygame.Surface | None = None
     output_scroll_py: int | None = None
@@ -472,6 +479,7 @@ class MenuRenderer:
         assert root is not None
         facade = root.box_surf.copy() if root.box_surf is not None else _make_surf(root.pw, root.ph)
         tree.hit_rects = []
+        tree.element_rects = [(root.element, facade.get_rect())]
         if root.element.is_selectable:
             tree.hit_rects.append((root.hit_target or root.element, facade.get_rect()))
         for child in root.children:
@@ -499,8 +507,10 @@ class MenuRenderer:
                 target.blit(shadow_surf, (at_px + shadow_px, at_py + shadow_py))
             target.blit(surf, (at_px, at_py))
 
+        node_rect = pygame.Rect(origin_px, origin_py, node.pw, node.ph)
+        tree.element_rects.append((node.element, node_rect))
         if element.is_selectable:
-            tree.hit_rects.append((node.hit_target or node.element, pygame.Rect(origin_px, origin_py, node.pw, node.ph)))
+            tree.hit_rects.append((node.hit_target or node.element, node_rect))
 
         previous_clip = target.get_clip()
         if element.overflow == OverflowType.CLIP:
@@ -601,6 +611,184 @@ class MenuRenderer:
         elif alignment in (AlignmentType.BOTTOMLEFT, AlignmentType.MIDBOTTOM, AlignmentType.BOTTOMRIGHT):
             align_py = max(0, outer_ph - inner_ph)
         return align_px, align_py
+
+
+class DebugRenderer:
+    """
+    Wraps a ``MenuRenderer`` and draws debugging aids over its output.
+
+    The stats overlay shows frame rate, element counts, recomposes per second
+    and cache memory. The hover border outlines the element under the mouse in
+    inverted colours. The hit rects mode outlines every selectable element.
+    """
+
+    def __init__(self, renderer: MenuRenderer, use_stats_overlay: bool = False, use_hover_border: bool = False, use_hit_rects: bool = False) -> None:
+        self.renderer: MenuRenderer = renderer
+        self.use_stats_overlay: bool = use_stats_overlay
+        self.use_hover_border: bool = use_hover_border
+        self.use_hit_rects: bool = use_hit_rects
+
+        self._last_tree: _MenuTree | None = None
+        self._last_output_surf: pygame.Surface | None = None
+        self._sample_start = time.perf_counter()
+        self._counts = {"fps": 0, "composes": 0, "presents": 0}
+        self._rates = {"fps": 0.0, "composes": 0.0, "presents": 0.0}
+
+        self._font: pygame.font.Font | None = None
+        self._overlay_cache: pygame.Surface | None = None
+        self._overlay_key: tuple[tuple[str, str], ...] | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        # Anything not overridden here behaves as on the wrapped renderer
+        return getattr(self.renderer, name)
+
+    # -------------------------------------------------------------------------
+
+    def toggle_stats_overlay(self) -> bool:
+        """Flip the stats overlay and return whether it is now shown."""
+        self.use_stats_overlay = not self.use_stats_overlay
+        return self.use_stats_overlay
+
+    def toggle_hover_border(self) -> bool:
+        """Flip the hover border and return whether it is now shown."""
+        self.use_hover_border = not self.use_hover_border
+        return self.use_hover_border
+
+    def toggle_hit_rects(self) -> bool:
+        """Flip the hit rect outlines and return whether they are now shown."""
+        self.use_hit_rects = not self.use_hit_rects
+        return self.use_hit_rects
+
+    # -------------------------------------------------------------------------
+
+    def render(self, menu: Menu, size: tuple[int, int]) -> pygame.Surface:
+        output = self.renderer.render(menu, size)
+        self._count_frame(output)
+        if not (self.use_stats_overlay or self.use_hover_border or self.use_hit_rects):
+            return output
+
+        # The wrapped renderer reuses its output between frames, so drawing on it would leak into later frames
+        output = output.copy()
+        if self.use_hit_rects:
+            self._draw_hit_rects(output, menu)
+        if self.use_hover_border:
+            self._draw_hover_border(output, menu)
+        if self.use_stats_overlay:
+            self._draw_stats_overlay(output, menu)
+        return output
+
+    def _draw_stats_overlay(self, output: pygame.Surface, menu: Menu) -> None:
+        stats = self.get_stats()
+        hovered = self.get_hovered_element(menu)
+        mb = 1024 * 1024
+        rows = (
+            ("FPS", f"{stats['fps']:.0f}"),
+            ("menu", type(menu).__name__),
+            ("elements", f"{stats['elements']:.0f} ({stats['selectable']:.0f} selectable)"),
+            ("composes/s", f"{stats['composes']:.1f}"),
+            ("presents/s", f"{stats['presents']:.1f}"),
+            ("text cache", f"{stats['text_cache_bytes'] / mb:.1f} MB"),
+            ("box cache", f"{stats['box_cache_bytes'] / mb:.1f} MB"),
+            ("shadow cache", f"{stats['shadow_cache_bytes'] / mb:.1f} MB"),
+            ("hover", f"{hovered[0]!r} {hovered[1].width}x{hovered[1].height} at ({hovered[1].x}, {hovered[1].y})" if hovered is not None else "-"),
+        )
+        if self._overlay_cache is None or rows != self._overlay_key:
+            self._overlay_cache = self._make_overlay_surf(rows)
+            self._overlay_key = rows
+        output.blit(self._overlay_cache, (_DEBUG_PADDING, _DEBUG_PADDING))
+
+    def _make_overlay_surf(self, rows: tuple[tuple[str, str], ...]) -> pygame.Surface:
+        if self._font is None:
+            self._font = pygame.font.Font(None, 18)
+        label_surfs = [self._font.render(label, True, "#A0A8B8") for label, _ in rows]
+        value_surfs = [self._font.render(value, True, "#F0F0F0") for _, value in rows]
+
+        # The default font is not monospaced, so values get their own column rather than space padding
+        value_px = 3 * _DEBUG_PADDING + max(surf.get_width() for surf in label_surfs)
+        line_ph = self._font.get_linesize()
+        overlay_pw = value_px + max(surf.get_width() for surf in value_surfs) + _DEBUG_PADDING
+        overlay_surf = pygame.Surface((overlay_pw, line_ph * len(rows) + 2 * _DEBUG_PADDING), pygame.SRCALPHA)
+        overlay_surf.fill("#000000C0")
+        for idx, (label_surf, value_surf) in enumerate(zip(label_surfs, value_surfs)):
+            overlay_surf.blit(label_surf, (_DEBUG_PADDING, _DEBUG_PADDING + idx * line_ph))
+            overlay_surf.blit(value_surf, (value_px, _DEBUG_PADDING + idx * line_ph))
+        return overlay_surf
+
+    def _draw_hover_border(self, output: pygame.Surface, menu: Menu) -> None:
+        hovered = self.get_hovered_element(menu)
+        if hovered is None:
+            return
+        rect = hovered[1].move(0, -int(round(menu._scroll))).clip(output.get_rect())
+        if rect.width == 0 or rect.height == 0:
+            return
+
+        # White minus the pixels gives their inverse, made opaque so it also shows over a transparent output
+        inverted_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+        inverted_surf.fill("#FFFFFFFF")
+        inverted_surf.blit(output.subsurface(rect), (0, 0), special_flags=pygame.BLEND_RGB_SUB)
+
+        thickness = min(_DEBUG_BORDER_THICKNESS, rect.width, rect.height)
+        strips = (
+            pygame.Rect(0, 0, rect.width, thickness),
+            pygame.Rect(0, rect.height - thickness, rect.width, thickness),
+            pygame.Rect(0, 0, thickness, rect.height),
+            pygame.Rect(rect.width - thickness, 0, thickness, rect.height),
+        )
+        for strip in strips:
+            output.blit(inverted_surf, (rect.x + strip.x, rect.y + strip.y), strip)
+
+    def _draw_hit_rects(self, output: pygame.Surface, menu: Menu) -> None:
+        tree = self.renderer._menu_tree
+        if tree is None or tree.menu is not menu:
+            return
+        scroll_py = int(round(menu._scroll))
+        for _, rect in tree.hit_rects:
+            pygame.draw.rect(output, _DEBUG_HIT_RECT_COLOR, rect.move(0, -scroll_py), 1)
+
+    # -------------------------------------------------------------------------
+
+    def get_stats(self) -> dict[str, float]:
+        """Frames, recomposes and presents per second, element counts and cache memory, as of the last sample."""
+        tree = self.renderer._menu_tree
+        return {
+            **self._rates,
+            "elements": len(tree.element_rects) if tree is not None else 0,
+            "selectable": len(tree.hit_rects) if tree is not None else 0,
+            "text_cache_bytes": self.renderer._text_cache.nbytes,
+            "box_cache_bytes": self.renderer._box_cache.nbytes,
+            "shadow_cache_bytes": self.renderer._shadow_cache.nbytes,
+        }
+
+    def _count_frame(self, output: pygame.Surface) -> None:
+        tree = self.renderer._menu_tree
+        self._counts["fps"] += 1
+        if tree is not self._last_tree:
+            self._counts["composes"] += 1
+            self._last_tree = tree
+        if output is not self._last_output_surf:
+            self._counts["presents"] += 1
+            self._last_output_surf = output
+
+        now = time.perf_counter()
+        elapsed = now - self._sample_start
+        if elapsed >= _DEBUG_SAMPLE_SECONDS:
+            self._rates = {name: count / elapsed for name, count in self._counts.items()}
+            self._counts = dict.fromkeys(self._counts, 0)
+            self._sample_start = now
+
+    # -------------------------------------------------------------------------
+
+    def get_hovered_element(self, menu: Menu) -> tuple[Element, pygame.Rect] | None:
+        """The deepest element under the mouse and its facade rect, or ``None``."""
+        tree = self.renderer._menu_tree
+        if tree is None or tree.menu is not menu or not pygame.mouse.get_focused():
+            return None
+        mouse_px, mouse_py = pygame.mouse.get_pos()
+        facade_pos = (mouse_px, mouse_py + int(round(menu._scroll)))
+        for element, rect in reversed(tree.element_rects):
+            if rect.collidepoint(facade_pos):
+                return element, rect
+        return None
 
 
 # ----------------------------------------------------------------------------

@@ -52,7 +52,7 @@ from .manager import (
     handle_menu_textinput,
 )
 from .menus import Menu
-from .renderer import MenuRenderer
+from .renderer import DebugRenderer, MenuRenderer
 
 
 __all__ = [
@@ -106,6 +106,7 @@ __all__ = [
     "handle_menu_textinput",
     # Rendering
     "MenuRenderer",
+    "DebugRenderer",
     "FontManager",
     "ImageManager",
 ]

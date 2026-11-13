@@ -18,7 +18,7 @@ from .menus import Menu
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from .renderer import MenuRenderer
+    from .renderer import DebugRenderer, MenuRenderer
 
 
 class MenuManager:
@@ -121,7 +121,7 @@ def _set_system_cursor(cursor: int) -> None:
         pass
 
 
-def handle_menu_mousemotion(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event, use_hand_cursor: bool = True) -> bool:
+def handle_menu_mousemotion(menu: Menu, renderer: MenuRenderer | DebugRenderer, event: pygame.event.Event, use_hand_cursor: bool = True) -> bool:
     """Select the selectable element under the mouse, if any."""
     if event.type != pygame.MOUSEMOTION:
         raise ValueError("Improper event handling")
@@ -138,7 +138,7 @@ def handle_menu_mousemotion(menu: Menu, renderer: MenuRenderer, event: pygame.ev
     return False
 
 
-def handle_menu_mousebuttondown(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
+def handle_menu_mousebuttondown(menu: Menu, renderer: MenuRenderer | DebugRenderer, event: pygame.event.Event) -> bool:
     """Select the clicked element; activate it on a second or double click."""
     if event.type != pygame.MOUSEBUTTONDOWN:
         raise ValueError("Improper event handling")
@@ -179,7 +179,7 @@ def handle_menu_mousebuttondown(menu: Menu, renderer: MenuRenderer, event: pygam
     return True
 
 
-def handle_menu_mousebuttonup(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
+def handle_menu_mousebuttonup(menu: Menu, renderer: MenuRenderer | DebugRenderer, event: pygame.event.Event) -> bool:
     """Mouse releases are not used by any element; always returns False."""
     if event.type != pygame.MOUSEBUTTONUP:
         raise ValueError("Improper event handling")
@@ -187,7 +187,7 @@ def handle_menu_mousebuttonup(menu: Menu, renderer: MenuRenderer, event: pygame.
     return False
 
 
-def handle_menu_mousewheel(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
+def handle_menu_mousewheel(menu: Menu, renderer: MenuRenderer | DebugRenderer, event: pygame.event.Event) -> bool:
     """Step the selected Selector or Slider, or otherwise scroll the menu."""
     if event.type != pygame.MOUSEWHEEL:
         raise ValueError("Improper event handling")
@@ -218,7 +218,7 @@ def handle_menu_mousewheel(menu: Menu, renderer: MenuRenderer, event: pygame.eve
     return True
 
 
-def handle_menu_keydown(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event, manager: MenuManager | None = None) -> bool:
+def handle_menu_keydown(menu: Menu, renderer: MenuRenderer | DebugRenderer, event: pygame.event.Event, manager: MenuManager | None = None) -> bool:
     """"""
     if event.type != pygame.KEYDOWN:
         raise ValueError("Improper event handling")
@@ -292,7 +292,7 @@ def handle_menu_keydown(menu: Menu, renderer: MenuRenderer, event: pygame.event.
     return False
 
 
-def handle_menu_textinput(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
+def handle_menu_textinput(menu: Menu, renderer: MenuRenderer | DebugRenderer, event: pygame.event.Event) -> bool:
     """"""
     if event.type != pygame.TEXTINPUT:
         raise ValueError("Improper event handling")

@@ -7,7 +7,7 @@ import time
 
 import pygame
 
-from facade import AlignmentType, Button, Element, InputField, Interface, Menu, NormalText
+from facade import AlignmentType, Button, DebugRenderer, Element, InputField, Interface, Menu, NormalText
 from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
@@ -167,3 +167,96 @@ def test_offset_moves_the_box():
     plain, moved = placed((0.0, 0.0)), placed((10.0, 5.0))
 
     assert (moved.x, moved.y, moved.size) == (plain.x + 10, plain.y + 5, plain.size)
+
+
+
+def debugging(ui, **modes):
+    """Wrap the interface's renderer in a ``DebugRenderer`` and return it."""
+    debug = DebugRenderer(ui.renderer, **modes)
+    ui.renderer = debug
+    return debug
+
+
+def test_debug_renderer_with_no_mode_returns_the_wrapped_output():
+    ui = Interface(size=SIZE)
+    ui.push(Title())
+    debug = debugging(ui)
+
+    assert ui.render() is debug.renderer._menu_tree.output_surf
+
+
+def test_debug_modes_leave_the_wrapped_output_and_cache_alone():
+    ui = Interface(size=SIZE)
+    ui.push(Title())
+    debug = debugging(ui, use_stats_overlay=True, use_hover_border=True, use_hit_rects=True)
+    clean = pixels(debug.renderer.render(ui.top(), SIZE))
+    calls = []
+    compose = debug.renderer._compose_tree
+    debug.renderer._compose_tree = lambda *args: calls.append(1) or compose(*args)
+
+    shown = ui.render()
+    ui.render()
+
+    assert pixels(debug.renderer._menu_tree.output_surf) == clean
+    assert pixels(shown) != clean
+    assert len(calls) == 0
+
+
+def test_debug_counts_recomposes_not_frames():
+    ui = Interface(size=SIZE)
+    ui.push(Title())
+    debug = debugging(ui)
+
+    for _ in range(3):
+        ui.render()
+    ui.top().root_elements[1].label.text = "BEGIN"
+    ui.render()
+
+    assert (debug._counts["fps"], debug._counts["composes"]) == (4, 2)
+
+
+def test_tree_records_rects_of_unselectable_elements():
+    label = NormalText(text="score")
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[label]))
+    ui.render()
+
+    assert any(element is label for element, _ in ui.renderer._menu_tree.element_rects)
+
+
+def test_hover_border_inverts_only_the_pixels_on_its_edge():
+    button = Button(label=Button.ButtonText(text="GO"), background_color="#204060FF")
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[button]))
+    debug = debugging(ui, use_hover_border=True)
+    plain = debug.renderer.render(ui.top(), SIZE)
+    rect = next(rect for hit, rect in debug.renderer._menu_tree.hit_rects if hit is button)
+    debug.get_hovered_element = lambda menu: (button, rect)
+
+    outlined = ui.render()
+
+    before, after = plain.get_at(rect.topleft), outlined.get_at(rect.topleft)
+    assert (after.r, after.g, after.b, after.a) == (255 - before.r, 255 - before.g, 255 - before.b, 255)
+    assert outlined.get_at(rect.center) == plain.get_at(rect.center)
+
+
+def test_hit_rects_outline_selectable_elements():
+    ui = Interface(size=SIZE)
+    ui.push(Title())
+    debug = debugging(ui, use_hit_rects=True)
+
+    outlined = ui.render()
+
+    rect = debug.renderer._menu_tree.hit_rects[0][1]
+    assert outlined.get_at(rect.topleft) == pygame.Color("#00FF80FF")
+
+
+def test_debug_renderer_hit_tests_like_the_wrapped_one():
+    ui = Interface(size=SIZE)
+    ui.push(Title())
+    ui.render()
+    button = ui.top().root_elements[1]
+    pos = hit_rect_of(ui, button).center
+    debugging(ui)
+
+    assert ui.renderer.select_element_at(ui.top(), pos) is button
