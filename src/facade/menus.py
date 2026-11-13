@@ -16,7 +16,6 @@ from .elements import (
     ALPHANUMERIC_REGEX,
     FLOAT_REGEX,
     INT_REGEX,
-    MEASURE,
     RGBA,
     RGBA_REGEX,
     AlignmentType,
@@ -27,17 +26,18 @@ from .elements import (
     HorizontalDivision,
     InputField,
     JustifyType,
+    Measure,
     MeasureType,
     NormalText,
     Selector,
-    TextDecorationTypes,
+    TextDecorationType,
     TitleText,
     VerticalDivision,
 )
 
 
 @dataclass(kw_only=True)
-class MenuType(ABC):
+class Menu(ABC):
     """
     Represents an abstract menu type with configurable layout, scrolling,
     and selection logic. Manages a root container of elements, supports
@@ -55,12 +55,12 @@ class MenuType(ABC):
     root_elements: list[Element] = field(default_factory=list)
     root_justify: JustifyType = JustifyType.CENTER
     root_alignment: AlignmentType = AlignmentType.TOPLEFT
-    root_size: MEASURE = (1.0, 1.0)
-    root_anchor: MEASURE = (0.0, 0.0)
-    root_margin: MEASURE = (0.0, 0.0)
-    root_offset: MEASURE = (0.0, 0.0)
-    root_padding: MEASURE = (16.0, 16.0)
-    root_gap: MEASURE = (8.0, 8.0)
+    root_size: Measure = (1.0, 1.0)
+    root_anchor: Measure = (0.0, 0.0)
+    root_margin: Measure = (0.0, 0.0)
+    root_offset: Measure = (0.0, 0.0)
+    root_padding: Measure = (16.0, 16.0)
+    root_gap: Measure = (8.0, 8.0)
     root_size_measure = MeasureType.RELATIVE
     root_anchor_measure = MeasureType.ABSOLUTE
     root_margin_measure = MeasureType.ABSOLUTE
@@ -163,7 +163,7 @@ class MenuType(ABC):
             if element.id == element_id:
                 if self._selected_index != idx:
                     self._selected_index = idx
-                    Element._iterative_version += 1
+                    Element._render_version += 1
                 return True
         return False
 
@@ -174,7 +174,7 @@ class MenuType(ABC):
         new_idx = min((self._selected_index + 1), len(items) - 1)
         if new_idx != self._selected_index:
             self._selected_index = new_idx
-            Element._iterative_version += 1
+            Element._render_version += 1
 
     def move_selected_up(self) -> None:
         items = self._selectable_elements
@@ -183,15 +183,15 @@ class MenuType(ABC):
         new_idx = max((self._selected_index - 1), 0)
         if new_idx != self._selected_index:
             self._selected_index = new_idx
-            Element._iterative_version += 1
+            Element._render_version += 1
 
 
 """
-The following are example use cases of `MenuType`
+The following are example use cases of `Menu`
 """
 
 @dataclass(kw_only=True)
-class Start(MenuType):
+class Start(Menu):
     """Full-screen start/title menu."""
 
     on_start: Callable = field(default=lambda: None)
@@ -215,20 +215,20 @@ class Start(MenuType):
                         text="A",
                         font_size=18 * 2,
                         text_color="#F0B443FF",
-                        text_decorations=TextDecorationTypes.ITALIC | TextDecorationTypes.ANTIALIASING,
+                        text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING,
                     ),
                     TitleText(
                         text="Mountain",
                         text_color="#F0B443FF",
                         shadow_color="#E6A23EFF",
                         shadow_offset=(3.0, 3.0),
-                        text_decorations=TextDecorationTypes.UNDERLINE,
+                        text_decorations=TextDecorationType.UNDERLINE,
                     ),
                     TitleText(
                         text="OF",
                         font_size=18 * 2,
                         text_color="#F0B443FF",
-                        text_decorations=TextDecorationTypes.ITALIC | TextDecorationTypes.ANTIALIASING,
+                        text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING,
                     ),
                     TitleText(
                         text="Tiles",
@@ -252,7 +252,7 @@ class Start(MenuType):
 
 
 @dataclass(kw_only=True)
-class Pause(MenuType):
+class Pause(Menu):
     """In-game pause overlay menu."""
 
     on_resume: Callable = field(default=lambda: None)
@@ -272,7 +272,7 @@ class Pause(MenuType):
 
 
 @dataclass(kw_only=True)
-class Settings(MenuType):
+class Settings(Menu):
     """Settings menu - dynamically generates editors for each uppercase
     attribute of ``settings`` (a module, namespace or other object).
 
@@ -363,8 +363,8 @@ class Settings(MenuType):
         ]
 
         self.root_elements = [
-            HeadingTwoText(text="Settings", justify=JustifyType.START, text_decorations=TextDecorationTypes.UNDERLINE),
-            NormalText(text="Adjust game values.", justify=JustifyType.START, is_wrapable=True),
+            HeadingTwoText(text="Settings", justify=JustifyType.START, text_decorations=TextDecorationType.UNDERLINE),
+            NormalText(text="Adjust game values.", justify=JustifyType.START, is_wrappable=True),
             Gap(size=(0.0, 4.0)),
             *dynamic_components,
             Gap(size=(0.0, 4.0)),
@@ -388,16 +388,16 @@ _LOREM = (
 
 
 @dataclass(kw_only=True)
-class About(MenuType):
+class About(Menu):
     """About screen."""
 
     on_return: Callable = field(default=lambda: None)
 
     def __post_init__(self):
         self.root_elements = [
-            HeadingTwoText(text="About", justify=JustifyType.START, text_decorations=TextDecorationTypes.UNDERLINE),
-            NormalText(text=_LOREM, justify=JustifyType.START, is_wrapable=True),
-            NormalText(text=_LOREM, justify=JustifyType.START, is_wrapable=True),
+            HeadingTwoText(text="About", justify=JustifyType.START, text_decorations=TextDecorationType.UNDERLINE),
+            NormalText(text=_LOREM, justify=JustifyType.START, is_wrappable=True),
+            NormalText(text=_LOREM, justify=JustifyType.START, is_wrappable=True),
             Button(
                 label=Button.ButtonText(text="RETURN"),
                 action=self.on_return,

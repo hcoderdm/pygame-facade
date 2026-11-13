@@ -34,14 +34,14 @@ from .elements import (
     Selector,
     Slider,
     Text,
-    TextDecorationTypes,
+    TextDecorationType,
     Toggle,
     VerticalDivision,
 )
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from .menus import MenuType
+    from .menus import Menu
 
 
 _PRECISION = 4
@@ -51,7 +51,7 @@ _SCROLLBAR_MIN_HEIGHT = 32
 
 # Pixel-memory budgets for the renderer's surface caches
 _TEXT_CACHE_BYTES = 32 * 1024 * 1024
-_DECOR_CACHE_BYTES = 32 * 1024 * 1024
+_BOX_CACHE_BYTES = 32 * 1024 * 1024
 _SHADOW_CACHE_BYTES = 16 * 1024 * 1024
 
 # Stand-in element for nodes composed without one
@@ -138,13 +138,13 @@ class ContentNode:
         return self._extent
 
 
-def _route_clicks(render_element: Element, target: Element) -> None:
+def _set_hit_target(render_element: Element, target: Element) -> None:
     """
     Point hit-tests on ``render_element`` (possibly a selection copy) at the
     real ``target``. Written past ``Element.__setattr__`` because this is
     renderer bookkeeping, not an edit, and must not invalidate any cache.
     """
-    object.__setattr__(render_element, "_interaction_target", target)
+    object.__setattr__(render_element, "_hit_target", target)
 
 
 class MenuRenderer:
@@ -164,7 +164,7 @@ class MenuRenderer:
         self.images: ImageManager = ImageManager()
 
         # Dispatch table that maps element types to composer functions
-        self._NODE_COMPOSERS: dict[type[Element], Callable[..., ContentNode]] = {
+        self._node_composers: dict[type[Element], Callable[..., ContentNode]] = {
             Button: self._compose_button_node,
             Gap: self._compose_gap_node,
             HorizontalDivision: self._compose_division_node,
@@ -177,15 +177,15 @@ class MenuRenderer:
             Slider: self._compose_slider_node,
             Selector: self._compose_selector_node,
         }
-        self._composer_by_type: dict[type, Callable[..., ContentNode] | None] = {}
+        self._composer_cache: dict[type, Callable[..., ContentNode] | None] = {}
 
         # Composed menu, rebuilt only when an element, the size or the menu changes
         self._menu_tree_cache: ContentNode | None = None
         self._menu_rect_cache: list[tuple[Element, pygame.Rect, int]] = []  # (element, rect, depth)
         self._hex_color_cache: dict[str, pygame.Color] = {}
-        self._menu_surf_cache: pygame.Surface | None = None
-        self._canvas_opaque: bool = False
-        self._canvas_serial: int = 0  # Increments every time the canvas is rebuilt
+        self._canvas_surf: pygame.Surface | None = None
+        self._canvas_is_opaque: bool = False
+        self._canvas_version: int = 0  # Increments every time the canvas is rebuilt
         self._last_version: int = -1
         self._last_display_size: tuple[int, int] = (0, 0)
         self._last_menu: object = None
@@ -193,14 +193,14 @@ class MenuRenderer:
 
         # Surfaces reused across recomposes
         self._text_cache = _SurfaceCache(_TEXT_CACHE_BYTES)  # Rendered strings
-        self._decor_cache = _SurfaceCache(_DECOR_CACHE_BYTES)  # Element background and border boxes
+        self._box_cache = _SurfaceCache(_BOX_CACHE_BYTES)  # Element background and border boxes
         self._shadow_cache = _SurfaceCache(_SHADOW_CACHE_BYTES)  # Shadows of cached surfaces
 
         # Final GUI surface, re-blitted only when the view (scroll) changes
         self._output_cache: pygame.Surface | None = None
         self._output_key: tuple | None = None
 
-    def render(self, menu: MenuType, size: tuple[int, int]) -> pygame.Surface:
+    def render(self, menu: Menu, size: tuple[int, int]) -> pygame.Surface:
         """
         Return a ``size``-sized surface showing ``menu``.
 
@@ -219,24 +219,24 @@ class MenuRenderer:
         # An open input field's cursor glyph is drawn into the canvas, so the
         # canvas is also rebuilt when a drawn glyph blinks
         can_use_cache = (
-            self._menu_surf_cache is not None
-            and Element._iterative_version == self._last_version
+            self._canvas_surf is not None
+            and Element._render_version == self._last_version
             and (display_pw, display_ph) == self._last_display_size
             and menu is self._last_menu
-            and all(field.get_cursor() == glyph for field, glyph in self._drawn_cursors)
+            and all(field.get_cursor_glyph() == glyph for field, glyph in self._drawn_cursors)
         )
         if not can_use_cache:
             self._drawn_cursors = []
             menu_tree = self._compose_menu_tree(menu, display_pw, display_ph)
             self._menu_tree_cache = menu_tree
             self._collect_element_layout(menu_tree)
-            self._menu_surf_cache = self._render_element_tree(menu_tree)
-            self._canvas_opaque = menu_tree.is_opaque
-            self._canvas_serial += 1
-            self._last_version = Element._iterative_version
+            self._canvas_surf = self._render_element_tree(menu_tree)
+            self._canvas_is_opaque = menu_tree.is_opaque
+            self._canvas_version += 1
+            self._last_version = Element._render_version
             self._last_display_size = (display_pw, display_ph)
             self._last_menu = menu
-        menu_surf = self._menu_surf_cache
+        menu_surf = self._canvas_surf
         assert menu_surf is not None
 
         # Keep the scroll position within the content
@@ -246,7 +246,7 @@ class MenuRenderer:
         scroll_y = int(round(menu._scroll))
 
         # Reuse the last GUI surface unless the canvas or the view changed
-        output_key = (self._canvas_serial, (display_pw, display_ph), scroll_y)
+        output_key = (self._canvas_version, (display_pw, display_ph), scroll_y)
         if self._output_cache is not None and output_key == self._output_key:
             return self._output_cache
 
@@ -255,7 +255,7 @@ class MenuRenderer:
 
         # An opaque canvas covering the window needs no per-pixel alpha; in
         # the display's format the game's blit becomes a copy instead of a blend
-        if self._canvas_opaque and source_rect.size == (display_pw, display_ph):
+        if self._canvas_is_opaque and source_rect.size == (display_pw, display_ph):
             output = menu_surf.subsurface(source_rect).convert()
         else:
             # Copy the visible part exactly; MAX against a zeroed surface avoids
@@ -270,7 +270,7 @@ class MenuRenderer:
         self._output_key = output_key
         return output
 
-    def scroll(self, menu: MenuType | None, display_size: tuple[int, int], wheel_delta_y: float, dt: float=0.00833) -> None:
+    def scroll(self, menu: Menu | None, display_size: tuple[int, int], wheel_delta_y: float, dt: float=0.00833) -> None:
         """Adjust the active menu scroll offset based on mouse wheel input."""
 
         if menu is None:
@@ -287,7 +287,7 @@ class MenuRenderer:
         menu.apply_scroll_impulse(-float(wheel_delta_y) * _SCROLL_ACCEL)
         menu.integrate_scroll(max_scroll, dt, 0.0, 0.1)
 
-    def select_element_at(self, menu: MenuType, pos: tuple[int, int]) -> Element | None:
+    def select_element_at(self, menu: Menu, pos: tuple[int, int]) -> Element | None:
         """Return the deepest element under *pos* and update the menu selection if possible."""
 
         if menu is None:
@@ -299,7 +299,7 @@ class MenuRenderer:
             return elements[0]
         return None
 
-    def find_elements_at(self, menu: MenuType, pos: tuple[int, int]) -> list[Element]:
+    def find_elements_at(self, menu: Menu, pos: tuple[int, int]) -> list[Element]:
         """Return all elements under window position *pos*, deepest first."""
 
         if self._menu_tree_cache is None or menu is not self._last_menu:
@@ -321,7 +321,7 @@ class MenuRenderer:
     def _render_element_tree(self, root: ContentNode) -> pygame.Surface:
         """Render the entire element tree onto a single surface and return it."""
 
-        # The root's box may be shared through the decoration cache, so draw
+        # The root's box may be shared through the box cache, so draw
         # on a copy rather than on the cached surface
         root_surf = root.surf.copy()
         root_pw, root_ph = root.surf.size
@@ -387,7 +387,7 @@ class MenuRenderer:
         return root_surf
 
     def _collect_element_layout(self, root: ContentNode) -> None:
-        """Populate _element_layout without performing any blits."""
+        """Populate _menu_rect_cache without performing any blits."""
 
         self._menu_rect_cache = []
         element_stack: list[tuple[ContentNode, tuple[int, int], int]] = [(root, (0, 0), 0)]
@@ -398,7 +398,7 @@ class MenuRenderer:
             absolute_py = root_position[1] + node.offset[1]
 
             if node.element.is_selectable:
-                hit_element = node.element._interaction_target or node.element
+                hit_element = node.element._hit_target or node.element
                 node_rect = pygame.Rect(absolute_px, absolute_py, node.surf.get_width(), node.surf.get_height())
                 self._menu_rect_cache.append((hit_element, node_rect, depth))
 
@@ -423,7 +423,7 @@ class MenuRenderer:
         optionally scale the shadow, applying the specified color and
         transparency.
 
-        Text and decoration surfaces are reused across recomposes, so the
+        Text and box surfaces are reused across recomposes, so the
         shadow is cached by the identity of ``element_surf``. The cache holds
         the source surface, so its id cannot be reused while cached.
         """
@@ -496,7 +496,7 @@ class MenuRenderer:
     Menu and element composition.
     """
 
-    def _compose_menu_tree(self, menu: MenuType, display_pw: int, display_ph: int) -> ContentNode:
+    def _compose_menu_tree(self, menu: Menu, display_pw: int, display_ph: int) -> ContentNode:
         """ """
 
         root_division: VerticalDivision = menu._div
@@ -633,7 +633,7 @@ class MenuRenderer:
         # The box depends only on these values, so identical boxes share one
         # surface across elements and recomposes. Surfaces in the tree are
         # never drawn on; the root is copied before it becomes the canvas
-        decor_key = (
+        box_key = (
             final_pw,
             final_ph,
             margin_pw,
@@ -642,14 +642,14 @@ class MenuRenderer:
             tuple(border_color) if border_color is not None else None,
             tuple(bg_color) if bg_color is not None else None,
         )
-        final_surf = self._decor_cache.get(decor_key)
+        final_surf = self._box_cache.get(box_key)
         if final_surf is None:
             final_surf = pygame.Surface((final_pw, final_ph), pygame.SRCALPHA)
             if border_color is not None:
                 pygame.draw.rect(final_surf, border_color, border_rect)
             if bg_color is not None:
                 pygame.draw.rect(final_surf, bg_color, background_rect)
-            self._decor_cache.put(decor_key, final_surf, final_surf)
+            self._box_cache.put(box_key, final_surf, final_surf)
 
         # Compose a final element node
         element_node = ContentNode(
@@ -715,15 +715,15 @@ class MenuRenderer:
         # Match the current element to its associated renderer by walking the MRO,
         # so subclasses fall back to the nearest registered parent composer.
         element_type = type(element)
-        if element_type in self._composer_by_type:
-            renderer = self._composer_by_type[element_type]
+        if element_type in self._composer_cache:
+            renderer = self._composer_cache[element_type]
         else:
             renderer = None
             for cls in element_type.mro():
-                renderer = self._NODE_COMPOSERS.get(cls)
+                renderer = self._node_composers.get(cls)
                 if renderer is not None:
                     break
-            self._composer_by_type[element_type] = renderer
+            self._composer_cache[element_type] = renderer
 
         if renderer is not None:
             return renderer(
@@ -868,7 +868,7 @@ class MenuRenderer:
 
         is_selected = selection_id == element.id
         render_element = element if not is_selected else replace(element, label=replace(element.label, text_color=element.selected_text_color))
-        _route_clicks(render_element, element)  # ensure clicks map to original element
+        _set_hit_target(render_element, element)  # ensure clicks map to original element
 
         text_selection_id = render_element.label.id if is_selected else selection_id
         text_child = self._compose_element_node(render_element.label, range_pw, range_ph, text_selection_id)
@@ -884,15 +884,15 @@ class MenuRenderer:
         """ """
         is_selected = selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
-        cursor = element.get_cursor()
+        cursor = element.get_cursor_glyph()
         self._drawn_cursors.append((element, cursor))  # Redraw when this glyph blinks
         text_child = replace(element.value, text=element.get_field() + cursor)
-        eff_value_child = replace(text_child, text_decorations=TextDecorationTypes.ITALIC | TextDecorationTypes.ANTIALIASING) if element.is_open else replace(text_child, text_color=element.edited_text_color) if element.is_opened else text_child
+        eff_value_child = replace(text_child, text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING) if element.is_open else replace(text_child, text_color=element.edited_text_color) if element.is_edited else text_child
         eff_value_child = replace(eff_value_child, text_color=element.invalid_text_color) if not element.authenticate() else replace(eff_value_child, text_color=element.edited_text_color) if element.is_altered() else eff_value_child
         text_selection_id = eff_element.label.id if is_selected else selection_id
         hint_node = self._compose_element_node(eff_element.hint, range_pw, range_ph, text_selection_id) if len(element.get_field()) == 0 else None
         text_node = self._compose_element_node(eff_value_child, range_pw, range_ph, text_selection_id)
-        _route_clicks(eff_element, element)  # ensure clicks map to original element
+        _set_hit_target(eff_element, element)  # ensure clicks map to original element
         return ContentNode(eff_element, blank_surf(), children=[hint_node, text_node] if hint_node else [text_node])
 
     def _compose_toggle_node(
@@ -908,7 +908,7 @@ class MenuRenderer:
         eff_label = replace(element.label, text=element.toggled_text) if element.value else element.label
         eff_label = replace(eff_label, text_color=element.edited_text_color) if element.is_called else eff_label
         label_node = self._compose_element_node(eff_label, range_pw, range_ph, selection_id)
-        _route_clicks(eff_element, element)  # route clicks on children to the toggle
+        _set_hit_target(eff_element, element)  # route clicks on children to the toggle
         return ContentNode(eff_element, blank_surf(), children=[label_node])
 
     def _compose_fill_node(
@@ -952,11 +952,11 @@ class MenuRenderer:
     ) -> ContentNode:
         is_selected = selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
-        _route_clicks(eff_element, element)
+        _set_hit_target(eff_element, element)
 
         selection_text = eff_element.selection_text
         selection_text = replace(selection_text, text=element.selection())
-        selection_text = replace(selection_text, text_decorations=TextDecorationTypes.ITALIC | TextDecorationTypes.ANTIALIASING) if element.is_open else selection_text
+        selection_text = replace(selection_text, text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING) if element.is_open else selection_text
         selection_text = replace(selection_text, text_color=eff_element.altered_selection_color) if element.is_altered() else selection_text
 
         left_arrow = eff_element.left_arrow
@@ -978,36 +978,36 @@ class MenuRenderer:
 
     def _make_text_surf(self, text_element: Text, text_color=None, background_color=None, wraplength=None) -> pygame.Surface:
         """Render a ``Text`` element's string to a surface."""
-        wrap_px = (wraplength if text_element.is_wrapable else 0) or 0
-        effective_text_color = text_color or text_element.text_color
+        wrap_pw = (wraplength if text_element.is_wrappable else 0) or 0
+        eff_text_color = text_color or text_element.text_color
         cache_key = (
-            text_element.font_path,
+            text_element.font_name,
             text_element.font_size,
             text_element.text,
-            effective_text_color,
+            eff_text_color,
             background_color,
             text_element.text_background,
             text_element.text_decorations,
-            wrap_px,
-            text_element.is_wrapable,
+            wrap_pw,
+            text_element.is_wrappable,
             text_element.text_alpha,
         )
         cached = self._text_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        font = self.fonts.get_font(text_element.font_path, text_element.font_size)
-        format = text_element.text_decorations
-        self._apply_text_format(font, format)
-        antialias = bool(format & TextDecorationTypes.ANTIALIASING)
+        font = self.fonts.get_font(text_element.font_name, text_element.font_size)
+        decorations = text_element.text_decorations
+        self._apply_text_decorations(font, decorations)
+        antialias = bool(decorations & TextDecorationType.ANTIALIASING)
         text = font.render(
             text_element.text or "",
             antialias,
-            effective_text_color,
+            eff_text_color,
             background_color or None,
-            wrap_px,
+            wrap_pw,
         ).convert_alpha()
-        self._reset_text_format(font)
+        self._reset_text_decorations(font)
         trim = 2 * int(text_element.font_size / 18) if len(text_element.text) > 0 and text_element.text[-1].isupper() else 0
 
         surf = blank_surf((text.width - trim, text.height))
@@ -1034,17 +1034,17 @@ class MenuRenderer:
         return self._hex_color_cache[rgba]
 
     @staticmethod
-    def _apply_text_format(font: pygame.font.Font, format: TextDecorationTypes | None) -> None:
+    def _apply_text_decorations(font: pygame.font.Font, decorations: TextDecorationType | None) -> None:
         """Set bold/italic/underline/strikethrough on *font*."""
-        if format is None:
+        if decorations is None:
             return
-        font.set_bold(bool(format & TextDecorationTypes.BOLD))
-        font.set_italic(bool(format & TextDecorationTypes.ITALIC))
-        font.set_underline(bool(format & TextDecorationTypes.UNDERLINE))
-        font.set_strikethrough(bool(format & TextDecorationTypes.STRIKETHROUGH))
+        font.set_bold(bool(decorations & TextDecorationType.BOLD))
+        font.set_italic(bool(decorations & TextDecorationType.ITALIC))
+        font.set_underline(bool(decorations & TextDecorationType.UNDERLINE))
+        font.set_strikethrough(bool(decorations & TextDecorationType.STRIKETHROUGH))
 
     @staticmethod
-    def _reset_text_format(font: pygame.font.Font) -> None:
+    def _reset_text_decorations(font: pygame.font.Font) -> None:
         """Clear all style flags so the cached font is left clean."""
         font.set_bold(False)
         font.set_italic(False)
@@ -1058,7 +1058,7 @@ class MenuRenderer:
         available_pw: int,
         available_ph: int,
     ) -> tuple[int, int]:
-        """Resolve a MEASURE value to pixel coordinates."""
+        """Resolve a Measure value to pixel coordinates."""
         pixel_x, pixel_y = value
 
         if measure == MeasureType.ABSOLUTE:

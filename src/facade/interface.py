@@ -27,14 +27,14 @@ from typing import Callable
 from .assets import FontManager, ImageManager
 from .manager import (
     MenuManager,
-    manage_menu_keydown,
-    manage_menu_mousebuttondown,
-    manage_menu_mousebuttonup,
-    manage_menu_mousemotion,
-    manage_menu_mousewheel,
-    manage_menu_textinput,
+    handle_menu_keydown,
+    handle_menu_mousebuttondown,
+    handle_menu_mousebuttonup,
+    handle_menu_mousemotion,
+    handle_menu_mousewheel,
+    handle_menu_textinput,
 )
-from .menus import MenuType
+from .menus import Menu
 from .renderer import MenuRenderer
 
 
@@ -48,23 +48,23 @@ class Interface:
     ``False`` for every event, leaving input to the game.
     """
 
-    def __init__(self, size: tuple[int, int], set_cursor: bool = True) -> None:
+    def __init__(self, size: tuple[int, int], use_hand_cursor: bool = True) -> None:
         """
-        ``size`` is the window size in pixels. With ``set_cursor`` the system
+        ``size`` is the window size in pixels. With ``use_hand_cursor`` the system
         cursor switches to a hand while hovering a selectable element.
         """
         self.size: tuple[int, int] = (int(size[0]), int(size[1]))
-        self.set_cursor: bool = set_cursor
+        self.use_hand_cursor: bool = use_hand_cursor
         self.manager: MenuManager = MenuManager()
         self.renderer: MenuRenderer = MenuRenderer()
 
-        self._event_handlers: dict[int, Callable[[MenuType, pygame.event.Event], bool]] = {
-            pygame.MOUSEMOTION: lambda menu, event: manage_menu_mousemotion(menu, self.renderer, event, set_cursor=self.set_cursor),
-            pygame.MOUSEBUTTONDOWN: lambda menu, event: manage_menu_mousebuttondown(menu, self.renderer, event),
-            pygame.MOUSEBUTTONUP: lambda menu, event: manage_menu_mousebuttonup(menu, self.renderer, event),
-            pygame.MOUSEWHEEL: lambda menu, event: manage_menu_mousewheel(menu, self.renderer, event),
-            pygame.KEYDOWN: lambda menu, event: manage_menu_keydown(menu, self.renderer, event, manager=self.manager),
-            pygame.TEXTINPUT: lambda menu, event: manage_menu_textinput(menu, self.renderer, event),
+        self._event_handlers: dict[int, Callable[[Menu, pygame.event.Event], bool]] = {
+            pygame.MOUSEMOTION: lambda menu, event: handle_menu_mousemotion(menu, self.renderer, event, use_hand_cursor=self.use_hand_cursor),
+            pygame.MOUSEBUTTONDOWN: lambda menu, event: handle_menu_mousebuttondown(menu, self.renderer, event),
+            pygame.MOUSEBUTTONUP: lambda menu, event: handle_menu_mousebuttonup(menu, self.renderer, event),
+            pygame.MOUSEWHEEL: lambda menu, event: handle_menu_mousewheel(menu, self.renderer, event),
+            pygame.KEYDOWN: lambda menu, event: handle_menu_keydown(menu, self.renderer, event, manager=self.manager),
+            pygame.TEXTINPUT: lambda menu, event: handle_menu_textinput(menu, self.renderer, event),
         }
 
     """
@@ -73,7 +73,7 @@ class Interface:
 
     @property
     def fonts(self) -> FontManager:
-        """Font registry used for ``Text.font_path`` lookups."""
+        """Font registry used for ``Text.font_name`` lookups."""
         return self.renderer.fonts
 
     @property
@@ -85,23 +85,23 @@ class Interface:
     Menu stack.
     """
 
-    def add_menu(self, menu: MenuType) -> None:
+    def add_menu(self, menu: Menu) -> None:
         """Register ``menu`` so it can later be pushed by its type."""
         self.manager.add_menu(menu)
 
-    def push(self, menu: MenuType | type[MenuType]) -> None:
+    def push(self, menu: Menu | type[Menu]) -> None:
         """
         Open a menu on top of the stack. Pass a menu instance (registered
         automatically) or the type of a menu registered with ``add_menu``.
         """
-        if isinstance(menu, MenuType):
+        if isinstance(menu, Menu):
             self.manager.add_menu(menu)
             menu = type(menu)
         if not self.manager.has_menu(menu):
             raise KeyError(f"No {menu.__name__} menu has been added")
         self.manager.push_stack(menu)
 
-    def pop(self) -> MenuType | None:
+    def pop(self) -> Menu | None:
         """Close the top menu and return it, or ``None`` if none is open."""
         return self.manager.pop_stack(keep_root=False)
 
@@ -109,14 +109,14 @@ class Interface:
         """Close every open menu."""
         self.manager.clear_stack()
 
-    def top(self) -> MenuType | None:
+    def top(self) -> Menu | None:
         """The menu currently shown, or ``None``."""
-        return self.manager.top()
+        return self.manager.top_stack()
 
     @property
     def is_open(self) -> bool:
         """Whether any menu is shown."""
-        return self.manager.top() is not None
+        return self.manager.top_stack() is not None
 
     """
     Frame loop.
@@ -127,7 +127,7 @@ class Interface:
         Apply ``event`` to the top menu. Returns ``True`` if the GUI used the
         event, in which case the game should ignore it.
         """
-        menu = self.manager.top()
+        menu = self.manager.top_stack()
         handler = self._event_handlers.get(event.type)
         if menu is None or handler is None:
             return False
@@ -145,7 +145,7 @@ class Interface:
         is ``SRCALPHA`` and transparent outside the menu. The same surface is
         returned while nothing visible has changed.
         """
-        menu = self.manager.top()
+        menu = self.manager.top_stack()
         if menu is None:
             return None
         return self.renderer.render(menu, self.size)

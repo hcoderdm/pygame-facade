@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pygame
 
-from facade import About, Element, InputField, Interface, MenuType, NormalText, Pause, Settings, Start
+from facade import About, Element, InputField, Interface, Menu, NormalText, Pause, Settings, Start
 
 SIZE = (800, 600)
 
@@ -28,11 +28,11 @@ def counting_recomposes(ui):
 def test_composing_a_menu_is_not_an_edit():
     ui = Interface(size=SIZE)
     ui.push(Settings(settings=SimpleNamespace(VOLUME=1.0, MUTE=False)))
-    version = Element._iterative_version
+    version = Element._render_version
 
     ui.render()
 
-    assert Element._iterative_version == version
+    assert Element._render_version == version
 
 
 def test_creating_elements_elsewhere_keeps_the_cache():
@@ -94,7 +94,7 @@ def test_recomposing_gives_identical_pixels():
     ui.push(Start())
     first = pixels(ui.render())
 
-    Element._iterative_version += 1  # Force a full recompose with warm caches
+    Element._render_version += 1  # Force a full recompose with warm caches
 
     assert pixels(ui.render()) == first
 
@@ -112,7 +112,7 @@ def test_opaque_menu_is_returned_without_per_pixel_alpha():
 
 def test_menu_smaller_than_window_keeps_alpha():
     @dataclass(kw_only=True)
-    class Panel(MenuType):
+    class Panel(Menu):
         root_size: tuple[float, float] = (0.5, 0.5)
 
     ui = Interface(size=SIZE)

@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from typing import cast
 
 from .elements import Button, InputField, Selector, Slider, Toggle
-from .menus import MenuType
+from .menus import Menu
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -25,28 +25,20 @@ class MenuManager:
     """Manages a push/pop stack of Menu objects and routes input to them."""
 
     def __init__(self) -> None:
-        self._menus: dict[type[MenuType], MenuType] = {}
-        self._stack: list[MenuType] = []
-
-    def __len__(self) -> int:
-        """Returns the number of menus"""
-        return len(self._menus.keys())
+        self._menus: dict[type[Menu], Menu] = {}
+        self._stack: list[Menu] = []
 
     """
     Menu mutations.
     """
 
-    def add_menu(self, menu: MenuType) -> None:
+    def add_menu(self, menu: Menu) -> None:
         """"""
         self._menus[type(menu)] = menu
 
-    def drop_menu(self, menu_type: type[MenuType]) -> None:
+    def drop_menu(self, menu_type: type[Menu]) -> None:
         """"""
         self._menus.pop(menu_type)
-
-    def set_menu(self, menu: MenuType) -> None:
-        """"""
-        self._menus[type(menu)] = menu
 
     def clear_menus(self) -> None:
         """"""
@@ -56,15 +48,15 @@ class MenuManager:
     Menu queries.
     """
 
-    def get_menu[T: MenuType](self, menu_type: type[T]) -> T | None:
+    def get_menu[T: Menu](self, menu_type: type[T]) -> T | None:
         """"""
         return cast("T | None", self._menus.get(menu_type))
 
-    def has_menu(self, menu_type: type[MenuType]) -> bool:
+    def has_menu(self, menu_type: type[Menu]) -> bool:
         """"""
         return menu_type in self._menus
 
-    def all_menus(self) -> Iterator[MenuType]:
+    def all_menus(self) -> Iterator[Menu]:
         """"""
         return iter(self._menus.values())
 
@@ -72,13 +64,13 @@ class MenuManager:
     Stack mutations.
     """
 
-    def push_stack(self, menu_type: type[MenuType]) -> None:
+    def push_stack(self, menu_type: type[Menu]) -> None:
         """Push a menu onto the stack by its type."""
         menu = self._menus.get(menu_type)
         if menu is not None:
             self._stack.append(menu)
 
-    def pop_stack(self, keep_root: bool = True) -> MenuType | None:
+    def pop_stack(self, keep_root: bool = True) -> Menu | None:
         """Pop the top menu from the stack.
 
         With ``keep_root`` (the default) the bottom menu is never popped, so
@@ -97,13 +89,13 @@ class MenuManager:
     Stack queries.
     """
 
-    def top(self) -> MenuType | None:
+    def top_stack(self) -> Menu | None:
         """Returns the first (top) item in the stack"""
         if len(self._stack) >= 1:
             return self._stack[-1]
         return None
 
-    def in_stack(self, menu_type: type[MenuType]) -> bool:
+    def in_stack(self, menu_type: type[Menu]) -> bool:
         """Returns whether a menu of type `menu_type` is in the stack"""
         return any(type(menu) is menu_type for menu in self._stack)
 
@@ -112,7 +104,7 @@ class MenuManager:
         return len(self._stack)
 
     @property
-    def stack(self) -> Iterator[MenuType]:
+    def stack(self) -> Iterator[Menu]:
         return iter(self._stack)
 
 
@@ -129,24 +121,24 @@ def _set_system_cursor(cursor: int) -> None:
         pass
 
 
-def manage_menu_mousemotion(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event, set_cursor: bool = True) -> bool:
+def handle_menu_mousemotion(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event, use_hand_cursor: bool = True) -> bool:
     """Select the selectable element under the mouse, if any."""
     if event.type != pygame.MOUSEMOTION:
         raise ValueError("Improper event handling")
 
     hovered = renderer.find_elements_at(menu, event.pos)
     if hovered != [] and hovered[0].is_selectable:
-        if set_cursor:
+        if use_hand_cursor:
             _set_system_cursor(pygame.SYSTEM_CURSOR_HAND)
         menu.select_element_by_id(hovered[0].id)
         return True
 
-    if set_cursor:
+    if use_hand_cursor:
         _set_system_cursor(pygame.SYSTEM_CURSOR_ARROW)
     return False
 
 
-def manage_menu_mousebuttondown(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
+def handle_menu_mousebuttondown(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
     """Select the clicked element; activate it on a second or double click."""
     if event.type != pygame.MOUSEBUTTONDOWN:
         raise ValueError("Improper event handling")
@@ -187,7 +179,7 @@ def manage_menu_mousebuttondown(menu: MenuType, renderer: MenuRenderer, event: p
     return True
 
 
-def manage_menu_mousebuttonup(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
+def handle_menu_mousebuttonup(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
     """Mouse releases are not used by any element; always returns False."""
     if event.type != pygame.MOUSEBUTTONUP:
         raise ValueError("Improper event handling")
@@ -195,7 +187,7 @@ def manage_menu_mousebuttonup(menu: MenuType, renderer: MenuRenderer, event: pyg
     return False
 
 
-def manage_menu_mousewheel(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
+def handle_menu_mousewheel(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
     """Step the selected Selector or Slider, or otherwise scroll the menu."""
     if event.type != pygame.MOUSEWHEEL:
         raise ValueError("Improper event handling")
@@ -226,7 +218,7 @@ def manage_menu_mousewheel(menu: MenuType, renderer: MenuRenderer, event: pygame
     return True
 
 
-def manage_menu_keydown(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event, manager: MenuManager | None = None) -> bool:
+def handle_menu_keydown(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event, manager: MenuManager | None = None) -> bool:
     """"""
     if event.type != pygame.KEYDOWN:
         raise ValueError("Improper event handling")
@@ -300,7 +292,7 @@ def manage_menu_keydown(menu: MenuType, renderer: MenuRenderer, event: pygame.ev
     return False
 
 
-def manage_menu_textinput(menu: MenuType, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
+def handle_menu_textinput(menu: Menu, renderer: MenuRenderer, event: pygame.event.Event) -> bool:
     """"""
     if event.type != pygame.TEXTINPUT:
         raise ValueError("Improper event handling")

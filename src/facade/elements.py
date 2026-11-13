@@ -21,8 +21,8 @@ RGBA_REGEX = r"^#[0-9a-fA-F]{8}$"
 BOOL_REGEX = r"^[01]$"
 
 RGBA = Annotated[str, f"regex:{RGBA_REGEX}"]
-MEASURE = Annotated[tuple[float, float], ""]
-ANGLE = Annotated[float, "radians", "range: [0, 2π]"]
+Measure = Annotated[tuple[float, float], ""]
+Angle = Annotated[float, "radians", "range: [0, 2π]"]
 
 COLOR_PALETTE_BASE: RGBA = "#000000FF"
 COLOR_PALETTE_SECONDARY: RGBA = "#000000FF"
@@ -89,7 +89,7 @@ class AlignmentType(Enum):
     BOTTOMRIGHT = auto()
 
 
-class TextDecorationTypes(Flag):
+class TextDecorationType(Flag):
     """
     Represents a set of text decoration options using a flag enumeration,
     including NONE, ANTIALIASING, BOLD, ITALIC, STRIKETHROUGH, and
@@ -157,11 +157,11 @@ class Element(ABC):
 
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
 
-    size: MEASURE = (0.0, 0.0)
-    anchor: MEASURE = (0.0, 0.0)
-    margin: MEASURE = (0.0, 0.0)
-    offset: MEASURE = (0.0, 0.0)
-    padding: MEASURE = (0.0, 0.0)
+    size: Measure = (0.0, 0.0)
+    anchor: Measure = (0.0, 0.0)
+    margin: Measure = (0.0, 0.0)
+    offset: Measure = (0.0, 0.0)
+    padding: Measure = (0.0, 0.0)
 
     size_measure: MeasureType = MeasureType.ABSOLUTE
     anchor_measure: MeasureType = MeasureType.ABSOLUTE
@@ -184,15 +184,15 @@ class Element(ABC):
     shadow_color: RGBA = TRANSPARENT
     shadow_alpha: int = 0x80
     shadow_scale: float = 1.0
-    shadow_offset: MEASURE = (3.0, 3.0)
+    shadow_offset: Measure = (3.0, 3.0)
     shadow_offset_measure: MeasureType = MeasureType.ABSOLUTE
 
     is_selectable: bool = True  # Whether the element can be selected for interaction
     is_visible: bool = True  # Whether the element should be rendered
     is_fixed: bool = False
 
-    _interaction_target: Element | None = None
-    _iterative_version: ClassVar[int] = 0
+    _hit_target: Element | None = None
+    _render_version: ClassVar[int] = 0
 
     # Element dataclasses are declared with repr=False; otherwise @dataclass
     # would generate a field-by-field __repr__ for every subclass, replacing
@@ -206,7 +206,7 @@ class Element(ABC):
         # construction: creating elements must not invalidate render caches
         current = self.__dict__.get(name, _UNSET)
         if current is not _UNSET and current is not value and current != value:
-            Element._iterative_version += 1
+            Element._render_version += 1
         object.__setattr__(self, name, value)
 
 
@@ -242,7 +242,7 @@ class Division(Element):
 
     elements: list[Element] = field(default_factory=lambda: [])
 
-    gap: MEASURE = (4.0, 4.0)  # Spacing between internal elements
+    gap: Measure = (4.0, 4.0)  # Spacing between internal elements
     gap_measure: MeasureType = MeasureType.ABSOLUTE
 
     background_color: RGBA = TRANSPARENT
@@ -283,10 +283,10 @@ class Gap(Element):
     selectability, and expandability. Inherits from Element.
     """
 
-    anchor: MEASURE = (0.0, 0.0)
-    margin: MEASURE = (0.0, 0.0)
-    offset: MEASURE = (0.0, 0.0)
-    padding: MEASURE = (0.0, 0.0)
+    anchor: Measure = (0.0, 0.0)
+    margin: Measure = (0.0, 0.0)
+    offset: Measure = (0.0, 0.0)
+    padding: Measure = (0.0, 0.0)
 
     background_color: RGBA = TRANSPARENT
     shadow_color: RGBA = TRANSPARENT
@@ -327,14 +327,14 @@ class Text(Element):
     text_color: RGBA = WHITE
     text_background: RGBA = TRANSPARENT  # Highlight color
     text_alpha: int = 0xFF
-    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationType = TextDecorationType.NONE
 
-    font_path: str = "editundo.ttf"  # Font family filename for text rendering
+    font_name: str = "editundo.ttf"  # Font family filename for text rendering
     font_size: int = 18  # Font size in pixels for text rendering
 
     background_color: RGBA = TRANSPARENT
     is_selectable: bool = False  # Static labels are not selectable
-    is_wrapable: bool = False
+    is_wrappable: bool = False
 
 
 @dataclass(kw_only=True, repr=False)
@@ -347,7 +347,7 @@ class NormalText(Text):
     font_size: int = 18 * 1
     text_color: RGBA = "#E0E0E0FF"
     # Plain weight: pygame's synthetic bold thickens the pixel font's strokes
-    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
 @dataclass(kw_only=True, repr=False)
@@ -360,7 +360,7 @@ class TitleText(Text):
 
     font_size: int = 18 * 4
     text_color: RGBA = WHITE
-    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
 @dataclass(kw_only=True, repr=False)
@@ -374,7 +374,7 @@ class SubtitleText(Text):
     font_size: int = 18
     text_color: RGBA = BLACK
     text_background: RGBA = WHITE
-    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
+    text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
 @dataclass(kw_only=True, repr=False)
@@ -384,13 +384,13 @@ class HeadingOneText(Text):
     color, shadow, and text decoration options. Inherits from Text.
     """
 
-    font_path: str = "editundo.ttf"
+    font_name: str = "editundo.ttf"
     font_size: int = 18 * 3
 
     text_color: RGBA = "#F0B443FF"
     shadow_color: RGBA = "#E6A23EFF"
-    shadow_offset: MEASURE = (3.0, 3.0)
-    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
+    shadow_offset: Measure = (3.0, 3.0)
+    text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
 @dataclass(kw_only=True, repr=False)
@@ -400,13 +400,13 @@ class HeadingTwoText(Text):
     color, shadow, and text decoration options. Inherits from Text.
     """
 
-    font_path: str = "editundo.ttf"
+    font_name: str = "editundo.ttf"
     font_size: int = 18 * 2
 
     text_color: RGBA = "#F0B443FF"
     shadow_color: RGBA = "#E6A23EFF"
-    shadow_offset: MEASURE = (2.0, 2.0)
-    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
+    shadow_offset: Measure = (2.0, 2.0)
+    text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
 @dataclass(kw_only=True, repr=False)
@@ -416,13 +416,13 @@ class HeadingThreeText(Text):
     size, color, shadow, and text decoration options. Inherits from Text.
     """
 
-    font_path: str = "editundo.ttf"
+    font_name: str = "editundo.ttf"
     font_size: int = NATIVE_FONT_SIZE
 
     text_color: RGBA = "#F0B443FF"
     shadow_color: RGBA = "#E6A23EFF"
-    shadow_offset: MEASURE = (1.0, 1.0)
-    text_decorations: TextDecorationTypes = TextDecorationTypes.NONE
+    shadow_offset: Measure = (1.0, 1.0)
+    text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
 @dataclass(kw_only=True, repr=False)
@@ -495,7 +495,7 @@ class Button(InteractiveElement):
     label: Text = field(default_factory=ButtonText)  # Text element used for rendering the button label
     action: Callable[[], Any] = field(default=lambda: None)  # Called with no arguments when the button is pressed
 
-    padding: MEASURE = (10.0, 2.0)
+    padding: Measure = (10.0, 2.0)
     background_color: RGBA = "#30384EFF"
     border_color: RGBA = "#606060FF"
     border_thickness: int = 1
@@ -531,8 +531,8 @@ class Toggle(InteractiveElement):
 
     alignment: AlignmentType = AlignmentType.CENTER
 
-    size: MEASURE = (64.0, 0.0)  # 40.0 is double the toggle (17.0)
-    padding: MEASURE = (8.0, 2.0)
+    size: Measure = (64.0, 0.0)  # 40.0 is double the toggle (17.0)
+    padding: Measure = (8.0, 2.0)
     background_color: RGBA = "#181C27FF"
     border_color: RGBA = "#E0E0E0FF"
     border_thickness: int = 1
@@ -560,7 +560,7 @@ class Slider(InteractiveElement):
     range: tuple[float, float] = (0, 1)  # Minimum and maximum allowed values
     step: float = 0.1  # Increment/decrement amount per adjustment
 
-    is_opened: bool = field(default=False, init=False, repr=False)
+    is_edited: bool = field(default=False, init=False, repr=False)
     is_open: bool = field(default=False, init=False, repr=False)
 
     def increment(self) -> None:
@@ -610,8 +610,8 @@ class Selector(InteractiveElement):
 
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
-    size: MEASURE = (0.0, 0.0)
-    padding: MEASURE = (4.0, 2.0)
+    size: Measure = (0.0, 0.0)
+    padding: Measure = (4.0, 2.0)
     background_color: RGBA = "#181C27FF"
     border_color: RGBA = "#E0E0E0FF"
     border_thickness: int = 1
@@ -624,15 +624,15 @@ class Selector(InteractiveElement):
     disabled_arrow_color: RGBA = "#30384EFF"
 
     is_open: bool = field(default=False, init=False, repr=False)
-    is_opened: bool = field(default=False, init=False, repr=False)
+    is_edited: bool = field(default=False, init=False, repr=False)
     _open_index: int = field(default=0, init=False, repr=False)
 
     def is_altered(self) -> bool:
         """"""
-        if self.is_open and not self.is_opened:
+        if self.is_open and not self.is_edited:
             return self._open_index != self.value
         else:
-            return self.is_opened
+            return self.is_edited
 
     def buffer_index(self) -> int:
         if self.is_open:
@@ -668,7 +668,7 @@ class Selector(InteractiveElement):
         """Commit the open buffer as the new value and exit open mode."""
         if self.is_open:
             if self.is_altered():
-                self.is_opened = True
+                self.is_edited = True
                 self.value = self._open_index
                 self.is_called = True
                 self.action(self.value)  # Call action once, with the new index
@@ -689,7 +689,7 @@ class InputField(InteractiveElement):
         text: str = "[RETURN]"
         font_size: int = 18
         text_color: RGBA = "#30384EFF"
-        text_decorations: TextDecorationTypes = TextDecorationTypes.ITALIC | TextDecorationTypes.ANTIALIASING
+        text_decorations: TextDecorationType = TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING
 
     @dataclass(kw_only=True, repr=False)
     class InputValueText(NormalText):
@@ -708,8 +708,8 @@ class InputField(InteractiveElement):
     action: Callable[[Any], bool] = field(default=lambda v: True)  # Function called with new value when committed
     validator: Callable[[str], bool] = field(default=lambda s: bool(re.fullmatch(ALPHANUMERIC_REGEX, s)))
 
-    size: MEASURE = (64.0, 0.0)
-    padding: MEASURE = (4.0, 2.0)
+    size: Measure = (64.0, 0.0)
+    padding: Measure = (4.0, 2.0)
     background_color: RGBA = "#181C27FF"
     border_color: RGBA = "#E0E0E0FF"
     border_thickness: int = 1
@@ -722,11 +722,11 @@ class InputField(InteractiveElement):
     edited_text_color: RGBA = "#F0B443FF"
     open_cursor_color: RGBA = "#EC4662FF"
 
-    is_opened: bool = field(default=False, init=False, repr=False)
+    is_edited: bool = field(default=False, init=False, repr=False)
     is_open: bool = field(default=False, init=False, repr=False)
     _open_buffer: str = field(default="", init=False, repr=False)  # Internal buffer for text being edited
 
-    _cursor_frames: ClassVar[tuple[str, ...]] = ("_", "")  # Cursor glyphs cycled while editing
+    _cursor_glyphs: ClassVar[tuple[str, ...]] = ("_", "")  # Cursor glyphs cycled while editing
     _cursor_period: ClassVar[float] = 0.5  # Seconds each cursor glyph is shown
     _cursor_epoch: float = field(default=0.0, init=False, repr=False)  # Time the blink cycle last restarted
 
@@ -738,12 +738,12 @@ class InputField(InteractiveElement):
         """Buffer while editing, or the committed value otherwise."""
         return self._open_buffer if self.is_open else self.value.text
 
-    def get_cursor(self) -> str:
+    def get_cursor_glyph(self) -> str:
         """Return the blinking cursor glyph for the current time, or "" when closed."""
         if not self.is_open:
             return ""
         elapsed = time.monotonic() - self._cursor_epoch
-        return self._cursor_frames[int(elapsed / self._cursor_period) % len(self._cursor_frames)]
+        return self._cursor_glyphs[int(elapsed / self._cursor_period) % len(self._cursor_glyphs)]
 
     def _restart_cursor(self) -> None:
         """Show the cursor immediately, e.g. after a keystroke."""
@@ -751,10 +751,10 @@ class InputField(InteractiveElement):
 
     def is_altered(self) -> bool:
         """"""
-        if self.is_open and not self.is_opened:
+        if self.is_open and not self.is_edited:
             return self._open_buffer != self.value.text
         else:
-            return self.is_opened
+            return self.is_edited
 
     """
     Change value. Provide functionality for modifying the input field's text 
@@ -789,7 +789,7 @@ class InputField(InteractiveElement):
         """Commit the edit buffer as the new value and exit edit mode."""
         if self.is_open and self.authenticate():
             if self.is_altered():
-                self.is_opened = True
+                self.is_edited = True
                 self.value.text = self._open_buffer
                 self.is_called = True
                 self.action(self.value.text)  # Call action once, with the new text

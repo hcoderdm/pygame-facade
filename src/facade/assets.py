@@ -20,7 +20,7 @@ class FontManager:
     (family, size), and falls back to the pygame default font.
 
     Fonts are registered under their lower-cased file name, which is what
-    ``Text.font_path`` refers to. For example ``EditUndo.ttf`` is found as
+    ``Text.font_name`` refers to. For example ``EditUndo.ttf`` is found as
     ``"editundo.ttf"``.
     """
 

@@ -63,5 +63,5 @@ def test_manager_stack_keeps_root_unless_asked():
     assert isinstance(manager.pop_stack(), Pause)
     assert manager.pop_stack() is None  # The root stays by default
     assert isinstance(manager.pop_stack(keep_root=False), Start)
-    assert manager.top() is None
+    assert manager.top_stack() is None
     assert not manager.in_stack(Start)

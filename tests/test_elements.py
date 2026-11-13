@@ -92,11 +92,11 @@ def test_input_field_cursor_blinks_on_a_clock(monkeypatch):
     monkeypatch.setattr(time, "monotonic", lambda: now[0])
     field = InputField()
 
-    assert field.get_cursor() == ""  # Closed
+    assert field.get_cursor_glyph() == ""  # Closed
     field.open()
-    shown = field.get_cursor()
+    shown = field.get_cursor_glyph()
     now[0] += InputField._cursor_period
-    hidden = field.get_cursor()
+    hidden = field.get_cursor_glyph()
 
     assert (shown, hidden) == ("_", "")
 

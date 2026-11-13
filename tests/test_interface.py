@@ -28,7 +28,7 @@ def center_of(ui, element):
 
 @pytest.fixture
 def ui():
-    return Interface(size=SIZE, set_cursor=False)
+    return Interface(size=SIZE, use_hand_cursor=False)
 
 
 def test_no_menu_means_no_surface_and_no_events_used(ui):

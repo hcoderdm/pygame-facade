@@ -11,9 +11,9 @@ Facade draws menus for a pygame-ce game without owning the game. The game keeps 
 | Module | Role |
 |---|---|
 | `interface.py` | `Interface`, the only object a game needs. Owns one `MenuManager` and one `MenuRenderer`. |
-| `manager.py` | `MenuManager` (the menu stack) and the `manage_menu_*` functions that apply one pygame event to a menu. |
+| `manager.py` | `MenuManager` (the menu stack) and the `handle_menu_*` functions that apply one pygame event to a menu. |
 | `renderer.py` | `MenuRenderer`, which turns a menu's element tree into the GUI surface and answers hit-tests. |
-| `menus.py` | `MenuType`, the base class for a screen, and the built-in `Start`, `Pause`, `Settings` and `About`. |
+| `menus.py` | `Menu`, the base class for a screen, and the built-in `Start`, `Pause`, `Settings` and `About`. |
 | `elements.py` | Element dataclasses (layout, text, images, interactive controls) and their attribute types. |
 | `assets.py` | `FontManager` and `ImageManager`, the caches the renderer loads fonts and images through. |
 
@@ -29,7 +29,7 @@ Containers (`VerticalDivision`, `HorizontalDivision`) hold child elements. Inter
 
 ## Menus and the stack
 
-A menu (`MenuType`) is a screen: a root `VerticalDivision` built from `root_elements`, plus the index of the selected element and a scroll offset. Built-in menus fill `root_elements` in `__post_init__` from their callback fields (`on_start`, `on_return` and so on).
+A menu (`Menu`) is a screen: a root `VerticalDivision` built from `root_elements`, plus the index of the selected element and a scroll offset. Built-in menus fill `root_elements` in `__post_init__` from their callback fields (`on_start`, `on_return` and so on).
 
 The selection is an index into the menu's selectable elements, found by walking the tree in order. Up and down move through that flat list, which is why keyboard navigation works for any layout without per-menu code.
 
@@ -52,7 +52,7 @@ Mouse hit-testing uses the layout from the last render, shifted by the scroll of
 `MenuRenderer.render(menu, size)` works in three stages.
 
 1. Compose. Starting from the menu's root division, each element becomes a `ContentNode` holding a surface, an offset and child nodes. `_compose_element_node` resolves the element's measures against the space its parent offers, asks a type-specific composer for the content, then draws the border and background around it. Composers are looked up by walking the element's class hierarchy, so subclasses such as `NormalText` reuse the `Text` composer. Divisions place their children in a row or column with a gap and per-child `justify`. A selected element is drawn from a copy made with `dataclasses.replace` using its `selected_*` colours, so selection never mutates the real element.
-2. Flatten. `_render_element_tree` walks the node tree breadth first and blits each node's shadow and surface onto the root canvas. `_collect_element_layout` records the screen rectangle of every selectable node for hit-testing; a node drawn from a copy points back to the real element through `_interaction_target`.
+2. Flatten. `_render_element_tree` walks the node tree breadth first and blits each node's shadow and surface onto the root canvas. `_collect_element_layout` records the screen rectangle of every selectable node for hit-testing; a node drawn from a copy points back to the real element through `_hit_target`.
 3. Output. The visible part of the canvas, chosen by the scroll offset, is copied into a fresh window-sized surface and the scrollbar is drawn on top. If the root element's box is fully opaque and the canvas covers the window, as for `Start`, `Settings` and `About`, that surface has no per-pixel alpha and is in the display's format, so the game's blit is a plain copy rather than a blend: about 44 µs instead of 930 µs at 800×600 on macOS, where the window itself has an alpha channel. Otherwise, as for `Pause`, it is `SRCALPHA` and transparent outside the menu.
 
 Nodes known to draw nothing (no visible background or border, or a zero size) are skipped in stage 2. The copy in stage 3 uses `BLEND_RGBA_MAX` onto a zeroed surface instead of a normal blit. A normal alpha blit onto a transparent surface multiplies colour by alpha a second time, so translucent menus such as `Pause` would come out darker than designed. For the same reason the root node is never blitted onto itself in stage 2.
@@ -61,7 +61,7 @@ Nodes known to draw nothing (no visible background or border, or a zero size) ar
 
 Rebuilding the tree every frame would be wasteful, so the renderer caches at two levels.
 
-- The composed canvas is reused while the menu, the window size and `Element._iterative_version` are unchanged, and while every input-field cursor glyph drawn into it is still the current one. `Element.__setattr__` increments that class-wide counter whenever an existing element attribute changes value, so any edit, selection change or toggle invalidates the cache without the renderer having to know what changed. Constructing an element, including the `dataclasses.replace` copies made for selection, is not an edit and leaves the counter alone, as does the renderer's own bookkeeping (`_interaction_target`). Composing a menu therefore never invalidates another `Interface`'s cache, and a game creating elements of its own does not either. The cursor blinks on a clock, so the canvas is rebuilt exactly when a drawn glyph flips and not every frame.
+- The composed canvas is reused while the menu, the window size and `Element._render_version` are unchanged, and while every input-field cursor glyph drawn into it is still the current one. `Element.__setattr__` increments that class-wide counter whenever an existing element attribute changes value, so any edit, selection change or toggle invalidates the cache without the renderer having to know what changed. Constructing an element, including the `dataclasses.replace` copies made for selection, is not an edit and leaves the counter alone, as does the renderer's own bookkeeping (`_hit_target`). Composing a menu therefore never invalidates another `Interface`'s cache, and a game creating elements of its own does not either. The cursor blinks on a clock, so the canvas is rebuilt exactly when a drawn glyph flips and not every frame.
 - The final surface is also reused while the canvas and the scroll position are unchanged.
 
 Within a recompose, surfaces are reused through three caches, each least-recently-used and bounded by pixel memory so that resizing the window or typing cannot grow them without limit: rendered strings, element boxes (keyed by size, margin, border and colours, so identical boxes share one surface) and shadows (keyed by the identity of the shadowed surface, which the first two caches keep stable). Surfaces in the tree are never drawn on; the root's box is copied before it becomes the canvas.
@@ -70,7 +70,7 @@ Within a recompose, surfaces are reused through three caches, each least-recentl
 
 ## Assets
 
-Each renderer owns its own `FontManager` and `ImageManager`, exposed as `Interface.fonts` and `Interface.images`, so two interfaces never share registrations. Fonts are registered by lower-cased file name, which is what `Text.font_path` names; an unregistered font falls back to pygame's default font rather than failing. No fonts ship with the package. Images load on first use from `Image.image_path`; a file that fails to load becomes a magenta placeholder, and a path that does not exist draws nothing.
+Each renderer owns its own `FontManager` and `ImageManager`, exposed as `Interface.fonts` and `Interface.images`, so two interfaces never share registrations. Fonts are registered by lower-cased file name, which is what `Text.font_name` names; an unregistered font falls back to pygame's default font rather than failing. No fonts ship with the package. Images load on first use from `Image.image_path`; a file that fails to load becomes a magenta placeholder, and a path that does not exist draws nothing.
 
 ## Decisions
 
