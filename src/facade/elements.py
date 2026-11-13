@@ -462,7 +462,7 @@ class InteractiveElement(Element):
     """
 
     value: Any = ""
-    action: Callable[[Any], bool] = field(default=lambda v: True)
+    action: Callable[..., Any] = field(default=lambda v: True)
 
     is_called: bool = False
 
