@@ -204,11 +204,12 @@ class MenuRenderer:
         """
         Return a ``size``-sized surface showing ``menu``.
 
-        When the menu paints every pixel of the window opaquely (``Start``,
-        ``Settings``, ``About``) the surface has no per-pixel alpha, which
-        makes the game's blit a plain copy. Otherwise it is ``SRCALPHA``:
-        pixels outside the menu are fully transparent and the menu's own
-        alpha (e.g. a translucent Pause background) is kept. Either way it
+        When the menu paints every pixel of the window opaquely (a root
+        that fills the window with an opaque background) the surface has
+        no per-pixel alpha, which makes the game's blit a plain copy.
+        Otherwise it is ``SRCALPHA``: pixels outside the menu are fully
+        transparent and the menu's own alpha (e.g. a translucent pause
+        overlay) is kept. Either way it
         is blitted at ``(0, 0)`` over the game's frame. The same surface
         object is returned while nothing has changed.
         """

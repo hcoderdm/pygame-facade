@@ -6,7 +6,11 @@ Menu and UI overlay toolkit for pygame-ce games.
 
 from .assets import FontManager, ImageManager
 from .elements import (
+    ALPHANUMERIC_REGEX,
+    FLOAT_REGEX,
+    INT_REGEX,
     RGBA,
+    RGBA_REGEX,
     AlignmentType,
     Button,
     Division,
@@ -47,7 +51,7 @@ from .manager import (
     handle_menu_mousewheel,
     handle_menu_textinput,
 )
-from .menus import About, Menu, Pause, Settings, Start
+from .menus import Menu
 from .renderer import MenuRenderer
 
 
@@ -85,12 +89,13 @@ __all__ = [
     "ImageTransformType",
     "OverflowType",
     "RotationType",
+    # Input validators
+    "INT_REGEX",
+    "FLOAT_REGEX",
+    "ALPHANUMERIC_REGEX",
+    "RGBA_REGEX",
     # Menus
     "Menu",
-    "Start",
-    "Pause",
-    "Settings",
-    "About",
     # Menu stack and input
     "MenuManager",
     "handle_menu_mousemotion",

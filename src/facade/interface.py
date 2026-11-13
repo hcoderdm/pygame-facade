@@ -6,7 +6,7 @@ takes the game's pygame events, and returns a GUI surface to blit over the
 game's frame.
 
     ui = Interface(size=screen.get_size())
-    ui.push(Start(on_start=start_game, on_quit=quit_game))
+    ui.push(Start(on_start=start_game, on_quit=quit_game))  # A Menu subclass of the game's own
 
     for event in pygame.event.get():
         if ui.handle_event(event):

@@ -4,11 +4,11 @@ Renderer output format and caching.
 
 from dataclasses import dataclass
 import time
-from types import SimpleNamespace
 
 import pygame
 
-from facade import About, Element, InputField, Interface, Menu, NormalText, Pause, Settings, Start
+from facade import Element, InputField, Interface, Menu, NormalText
+from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
 
@@ -27,7 +27,7 @@ def counting_recomposes(ui):
 
 def test_composing_a_menu_is_not_an_edit():
     ui = Interface(size=SIZE)
-    ui.push(Settings(settings=SimpleNamespace(VOLUME=1.0, MUTE=False)))
+    ui.push(Form())
     version = Element._render_version
 
     ui.render()
@@ -37,7 +37,7 @@ def test_composing_a_menu_is_not_an_edit():
 
 def test_creating_elements_elsewhere_keeps_the_cache():
     ui = Interface(size=SIZE)
-    ui.push(Pause())
+    ui.push(Overlay())
     first = ui.render()
 
     NormalText(text="score: 10")  # e.g. a game building its own elements each frame
@@ -47,8 +47,8 @@ def test_creating_elements_elsewhere_keeps_the_cache():
 
 def test_two_interfaces_keep_their_own_caches():
     a, b = Interface(size=SIZE), Interface(size=SIZE)
-    a.push(Pause())
-    b.push(Start())
+    a.push(Overlay())
+    b.push(Title())
     calls_a, calls_b = counting_recomposes(a), counting_recomposes(b)
 
     for _ in range(5):
@@ -61,7 +61,7 @@ def test_two_interfaces_keep_their_own_caches():
 def test_open_input_field_cursor_blinks_on_screen(monkeypatch):
     now = [100.0]
     monkeypatch.setattr(time, "monotonic", lambda: now[0])
-    menu = Settings(settings=SimpleNamespace(NAME="PLAYER"))
+    menu = Form()
     field = next(e for e in menu._selectable_elements if isinstance(e, InputField))
     ui = Interface(size=SIZE)
     ui.push(menu)
@@ -78,7 +78,7 @@ def test_open_input_field_cursor_blinks_on_screen(monkeypatch):
 
 def test_text_cache_is_bounded_while_resizing():
     ui = Interface(size=SIZE)
-    ui.push(About())
+    ui.push(Form())
     cache = ui.renderer._text_cache
     cache.max_bytes = 4 * 1024 * 1024
 
@@ -91,7 +91,7 @@ def test_text_cache_is_bounded_while_resizing():
 
 def test_recomposing_gives_identical_pixels():
     ui = Interface(size=SIZE)
-    ui.push(Start())
+    ui.push(Title())
     first = pixels(ui.render())
 
     Element._render_version += 1  # Force a full recompose with warm caches
@@ -101,13 +101,13 @@ def test_recomposing_gives_identical_pixels():
 
 def test_opaque_menu_is_returned_without_per_pixel_alpha():
     ui = Interface(size=SIZE)
-    ui.push(Start())
+    ui.push(Title())
 
     surface = ui.render()
 
     assert surface.get_size() == SIZE
     assert not surface.get_flags() & pygame.SRCALPHA
-    assert surface.get_at((0, 0)) == pygame.Color("#0C0E14FF")  # Start's background
+    assert surface.get_at((0, 0)) == pygame.Color("#0C0E14FF")  # Menu's default background
 
 
 def test_menu_smaller_than_window_keeps_alpha():

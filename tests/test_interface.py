@@ -5,7 +5,8 @@ Interface: events in, GUI surface out.
 import pygame
 import pytest
 
-from facade import Button, Interface, Pause, Start
+from facade import Button, Interface
+from sample_menus import Overlay, Title
 
 SIZE = (800, 600)
 
@@ -38,17 +39,17 @@ def test_no_menu_means_no_surface_and_no_events_used(ui):
 
 
 def test_render_returns_window_sized_transparent_surface(ui):
-    ui.push(Pause())
+    ui.push(Overlay())
 
     surface = ui.render()
 
     assert surface.get_size() == SIZE
     assert surface.get_flags() & pygame.SRCALPHA
-    assert surface.get_at((SIZE[0] // 2, SIZE[1] - 1)).a == 0xC0  # Pause's translucent background
+    assert surface.get_at((SIZE[0] // 2, SIZE[1] - 1)).a == 0xC0  # Overlay's translucent background
 
 
 def test_render_reuses_surface_until_something_changes(ui):
-    menu = Start()
+    menu = Title()
     ui.push(menu)
 
     first = ui.render()
@@ -60,7 +61,7 @@ def test_render_reuses_surface_until_something_changes(ui):
 
 def test_return_key_presses_selected_button(ui):
     pressed = []
-    ui.push(Start(on_start=lambda: pressed.append("start")))
+    ui.push(Title(on_start=lambda: pressed.append("start")))
     ui.render()
 
     assert ui.handle_event(key(pygame.K_RETURN)) is True
@@ -69,7 +70,7 @@ def test_return_key_presses_selected_button(ui):
 
 def test_clicking_selected_button_presses_it(ui):
     pressed = []
-    menu = Start(on_quit=lambda: pressed.append("quit"))
+    menu = Title(on_quit=lambda: pressed.append("quit"))
     ui.push(menu)
     ui.render()
     quit_button = next(e for e in menu._selectable_elements if isinstance(e, Button) and e.label.text == "QUIT")
@@ -82,23 +83,23 @@ def test_clicking_selected_button_presses_it(ui):
 
 
 def test_escape_closes_overlay_but_leaves_root_to_the_game(ui):
-    ui.push(Start())
-    ui.push(Pause())
+    ui.push(Title())
+    ui.push(Overlay())
     ui.render()
 
     assert ui.handle_event(key(pygame.K_ESCAPE)) is True
-    assert isinstance(ui.top(), Start)
+    assert isinstance(ui.top(), Title)
     assert ui.handle_event(key(pygame.K_ESCAPE)) is False
-    assert isinstance(ui.top(), Start)
+    assert isinstance(ui.top(), Title)
 
 
 def test_pop_can_close_the_last_menu(ui):
-    ui.push(Pause())
+    ui.push(Overlay())
 
-    assert isinstance(ui.pop(), Pause)
+    assert isinstance(ui.pop(), Overlay)
     assert ui.render() is None
 
 
 def test_push_unknown_type_raises(ui):
     with pytest.raises(KeyError):
-        ui.push(Pause)
+        ui.push(Overlay)

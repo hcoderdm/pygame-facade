@@ -14,7 +14,8 @@ from pathlib import Path
 import pygame
 
 import settings  # examples/settings.py, edited live by the Settings menu
-from facade import About, Interface, Pause, Settings, Start
+from facade import Interface
+from menus import About, Pause, Settings, Start  # examples/menus.py, this game's screens
 
 
 def draw_fps(screen: pygame.Surface, font: pygame.font.Font, fps: float) -> None:
