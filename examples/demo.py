@@ -38,9 +38,9 @@ def main() -> None:
     ball = pygame.Vector2(400, 300)
     velocity = pygame.Vector2(240, 180)
 
-    ui = Interface(size=screen.get_size())
+    interface = Interface(size=screen.get_size())
     # Register the bundled pixel font; Text elements default to "editundo.ttf".
-    ui.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
+    interface.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
     fps_font = pygame.font.Font(None, 16)
 
     def quit_game() -> None:
@@ -48,17 +48,17 @@ def main() -> None:
         running = False
 
     def back_to_title() -> None:
-        ui.clear()
-        ui.push(Start)
+        interface.clear()
+        interface.push(Start)
 
-    ui.add_menu(Settings(settings=settings, on_return=ui.pop))
-    ui.add_menu(About(on_return=ui.pop))
-    ui.add_menu(Pause(on_resume=ui.pop, on_restart=ui.pop, on_exit=back_to_title))
-    ui.push(
+    interface.add_menu(Settings(settings=settings, on_return=interface.pop))
+    interface.add_menu(About(on_return=interface.pop))
+    interface.add_menu(Pause(on_resume=interface.pop, on_restart=interface.pop, on_exit=back_to_title))
+    interface.push(
         Start(
-            on_start=ui.clear,  # Close every menu and play
-            on_settings=lambda: ui.push(Settings),
-            on_about=lambda: ui.push(About),
+            on_start=interface.clear,  # Close every menu and play
+            on_settings=lambda: interface.push(Settings),
+            on_about=lambda: interface.push(About),
             on_quit=quit_game,
         )
     )
@@ -70,18 +70,18 @@ def main() -> None:
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.VIDEORESIZE:
-                ui.resize(event.size)  # Keep the GUI surface the size of the window
-            elif ui.handle_event(event):
+                interface.resize(event.size)  # Keep the GUI surface the size of the window
+            elif interface.handle_event(event):
                 continue  # The menu used this event
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 # Escape reaches the game when there is no menu to go back to
-                if not ui.is_open:
-                    ui.push(Pause)
-                elif isinstance(ui.top(), Pause):
-                    ui.pop()
+                if not interface.is_open:
+                    interface.push(Pause)
+                elif isinstance(interface.top(), Pause):
+                    interface.pop()
 
         # Update the game only while no menu is open
-        if not ui.is_open:
+        if not interface.is_open:
             ball += velocity * dt
             width, height = screen.get_size()
             if ball.x < 20 or ball.x > width - 20:
@@ -92,7 +92,7 @@ def main() -> None:
         # Draw the game, then the GUI over it
         screen.fill((24, 64, 48))
         pygame.draw.circle(screen, (230, 190, 60), ball, 20)
-        if (gui := ui.render()) is not None:
+        if (gui := interface.render()) is not None:
             screen.blit(gui, (0, 0))
             draw_fps(screen, fps_font, clock.get_fps())
         pygame.display.flip()
