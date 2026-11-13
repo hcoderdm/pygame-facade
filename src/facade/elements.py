@@ -191,7 +191,6 @@ class Element(ABC):
     is_visible: bool = True  # Whether the element should be rendered
     is_fixed: bool = False
 
-    _hit_target: Element | None = None
     _render_version: ClassVar[int] = 0
 
     # Element dataclasses are declared with repr=False; otherwise @dataclass

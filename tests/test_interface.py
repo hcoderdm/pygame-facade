@@ -21,7 +21,7 @@ def click(pos):
 
 def center_of(ui, element):
     """Window position of ``element`` in the last rendered layout."""
-    for hit, rect, _depth in ui.renderer._menu_rect_cache:
+    for hit, rect in ui.renderer._menu_tree.hit_rects:
         if hit is element:
             return rect.center
     raise LookupError(element)

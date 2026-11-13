@@ -1,19 +1,17 @@
 """
 renderer.py
-
-MenuRenderer - draws a menu into a window-sized, transparent GUI surface
-that the host game blits over its own frame.
 """
 
 from __future__ import annotations
 
 import pygame
 
-from collections import OrderedDict, deque
-from collections.abc import Hashable, Iterable
-from dataclasses import replace
+from collections import OrderedDict
+from collections.abc import Hashable
+from dataclasses import dataclass, field, replace
+from functools import singledispatchmethod
 import math
-from typing import Any, Callable
+from typing import Any, NamedTuple
 
 from .assets import FontManager, ImageManager
 from .elements import (
@@ -21,6 +19,7 @@ from .elements import (
     TRANSPARENT,
     AlignmentType,
     Button,
+    Division,
     Element,
     Fill,
     Gap,
@@ -46,1058 +45,577 @@ if TYPE_CHECKING:
 
 _PRECISION = 4
 
-_SCROLLBAR_WIDTH = 10
-_SCROLLBAR_MIN_HEIGHT = 32
+_SCROLLBAR_PW = 10
+_SCROLLBAR_MIN_PH = 32
 
-# Pixel-memory budgets for the renderer's surface caches
 _TEXT_CACHE_BYTES = 32 * 1024 * 1024
 _BOX_CACHE_BYTES = 32 * 1024 * 1024
 _SHADOW_CACHE_BYTES = 16 * 1024 * 1024
 
-# Stand-in element for nodes composed without one
-_NULL_ELEMENT = Element()
+_ROTATION_DEGREES = {RotationType.LEFT: 90, RotationType.RIGHT: -90, RotationType.UPTURNED: 180}
+
+
+# ----------------------------------------------------------------------------
 
 
 class _SurfaceCache:
-    """
-    Least-recently-used cache bounded by the pixel memory of its surfaces,
-    so caches keyed on things like wrap width or typed text cannot grow
-    without limit while the window is resized or a field is edited.
-    """
+    """Least-recently-used cache bounded by the pixel memory of its surfaces."""
 
     def __init__(self, max_bytes: int) -> None:
         self.max_bytes = max_bytes
         self._items: OrderedDict[Hashable, tuple[Any, int]] = OrderedDict()
         self._bytes = 0
 
-    def __len__(self) -> int:
-        return len(self._items)
-
     @property
     def nbytes(self) -> int:
         """Approximate pixel memory held, in bytes."""
         return self._bytes
 
-    def get(self, key: Hashable) -> Any:
+    def _get(self, key: Hashable) -> Any:
         item = self._items.get(key)
         if item is None:
             return None
         self._items.move_to_end(key)
         return item[0]
 
-    def put(self, key: Hashable, value: Any, surf: pygame.Surface) -> None:
+    def _has(self, key: Hashable) -> bool:
+        return key in self._items
+
+    def _put(self, key: Hashable, value: Any, surf: pygame.Surface) -> None:
         nbytes = surf.get_width() * surf.get_height() * 4
-        old = self._items.pop(key, None)
-        if old is not None:
-            self._bytes -= old[1]
+        self._drop(key)
         self._items[key] = (value, nbytes)
         self._bytes += nbytes
         while self._bytes > self.max_bytes and len(self._items) > 1:
             _, (_, evicted) = self._items.popitem(last=False)
             self._bytes -= evicted
 
-    def clear(self) -> None:
+    def _take(self, key: Hashable) -> Any:
+        item = self._items.pop(key, None)
+        if item is None:
+            return None
+        self._bytes -= item[1]
+        return item[0]
+
+    def _drop(self, key: Hashable) -> None:
+        self._take(key)
+
+    def _clear(self) -> None:
         self._items.clear()
         self._bytes = 0
 
 
-class ContentNode:
-    """
-    Represents a node in the UI element tree, holding an element, its
-    pygame.Surface, an offset position, and a list of child ContentNode
-    instances.
-
-    ``is_empty`` marks a surface known to be fully transparent, which is
-    never blitted. ``is_opaque`` marks a surface known to be fully opaque.
-    """
-
-    __slots__ = ("element", "surf", "offset", "children", "is_empty", "is_opaque", "_extent")
-
-    def __init__(self, element=None, surf=None, offset=None, children=None, is_empty=False):
-        self.element: Element = element if element is not None else _NULL_ELEMENT
-        self.surf: pygame.Surface = surf if surf is not None else blank_surf()
-        self.offset: tuple[int, int] = offset or (0, 0)
-        self.children: list[ContentNode] = children or []
-        self.is_empty: bool = is_empty
-        self.is_opaque: bool = False
-        self._extent: tuple[int, int] | None = None
-
-    def extent(self) -> tuple[int, int]:
-        """
-        Width and height of this node's surface and all its descendants,
-        relative to the node. Memoized: callers compute it only once the
-        subtree's surfaces and offsets are final.
-        """
-        if self._extent is None:
-            pw, ph = self.surf.get_size()
-            for child in self.children:
-                cw, ch = child.extent()
-                pw = max(pw, child.offset[0] + cw)
-                ph = max(ph, child.offset[1] + ch)
-            self._extent = (pw, ph)
-        return self._extent
-
-
-def _set_hit_target(render_element: Element, target: Element) -> None:
-    """
-    Point hit-tests on ``render_element`` (possibly a selection copy) at the
-    real ``target``. Written past ``Element.__setattr__`` because this is
-    renderer bookkeeping, not an edit, and must not invalidate any cache.
-    """
-    object.__setattr__(render_element, "_hit_target", target)
-
-
-class MenuRenderer:
-    """
-    Composes a menu's element tree and returns it as a GUI surface.
-
-    The window must already exist (``pygame.display.set_mode``) before
-    rendering, because surfaces are converted to the display format. Fonts
-    and images are looked up through this renderer's own ``fonts`` and
-    ``images`` managers.
-    """
-
-    def __init__(self) -> None:
-
-        # Asset registries owned by this renderer
-        self.fonts: FontManager = FontManager()
-        self.images: ImageManager = ImageManager()
-
-        # Dispatch table that maps element types to composer functions
-        self._node_composers: dict[type[Element], Callable[..., ContentNode]] = {
-            Button: self._compose_button_node,
-            Gap: self._compose_gap_node,
-            HorizontalDivision: self._compose_division_node,
-            VerticalDivision: self._compose_division_node,
-            InputField: self._compose_input_field_node,
-            Text: self._compose_text_node,
-            Toggle: self._compose_toggle_node,
-            Fill: self._compose_fill_node,
-            Image: self._compose_image_node,
-            Slider: self._compose_slider_node,
-            Selector: self._compose_selector_node,
-        }
-        self._composer_cache: dict[type, Callable[..., ContentNode] | None] = {}
-
-        # Composed menu, rebuilt only when an element, the size or the menu changes
-        self._menu_tree_cache: ContentNode | None = None
-        self._menu_rect_cache: list[tuple[Element, pygame.Rect, int]] = []  # (element, rect, depth)
-        self._hex_color_cache: dict[str, pygame.Color] = {}
-        self._canvas_surf: pygame.Surface | None = None
-        self._canvas_is_opaque: bool = False
-        self._canvas_version: int = 0  # Increments every time the canvas is rebuilt
-        self._last_version: int = -1
-        self._last_display_size: tuple[int, int] = (0, 0)
-        self._last_menu: object = None
-        self._drawn_cursors: list[tuple[InputField, str]] = []  # Cursor glyphs drawn into the canvas
-
-        # Surfaces reused across recomposes
-        self._text_cache = _SurfaceCache(_TEXT_CACHE_BYTES)  # Rendered strings
-        self._box_cache = _SurfaceCache(_BOX_CACHE_BYTES)  # Element background and border boxes
-        self._shadow_cache = _SurfaceCache(_SHADOW_CACHE_BYTES)  # Shadows of cached surfaces
-
-        # Final GUI surface, re-blitted only when the view (scroll) changes
-        self._output_cache: pygame.Surface | None = None
-        self._output_key: tuple | None = None
-
-    def render(self, menu: Menu, size: tuple[int, int]) -> pygame.Surface:
-        """
-        Return a ``size``-sized surface showing ``menu``.
-
-        When the menu paints every pixel of the window opaquely (a root
-        that fills the window with an opaque background) the surface has
-        no per-pixel alpha, which makes the game's blit a plain copy.
-        Otherwise it is ``SRCALPHA``: pixels outside the menu are fully
-        transparent and the menu's own alpha (e.g. a translucent pause
-        overlay) is kept. Either way it
-        is blitted at ``(0, 0)`` over the game's frame. The same surface
-        object is returned while nothing has changed.
-        """
-
-        display_pw, display_ph = size
-
-        # Compose and render the menu tree, skipping if nothing has changed.
-        # An open input field's cursor glyph is drawn into the canvas, so the
-        # canvas is also rebuilt when a drawn glyph blinks
-        can_use_cache = (
-            self._canvas_surf is not None
-            and Element._render_version == self._last_version
-            and (display_pw, display_ph) == self._last_display_size
-            and menu is self._last_menu
-            and all(field.get_cursor_glyph() == glyph for field, glyph in self._drawn_cursors)
-        )
-        if not can_use_cache:
-            self._drawn_cursors = []
-            menu_tree = self._compose_menu_tree(menu, display_pw, display_ph)
-            self._menu_tree_cache = menu_tree
-            self._collect_element_layout(menu_tree)
-            self._canvas_surf = self._render_element_tree(menu_tree)
-            self._canvas_is_opaque = menu_tree.is_opaque
-            self._canvas_version += 1
-            self._last_version = Element._render_version
-            self._last_display_size = (display_pw, display_ph)
-            self._last_menu = menu
-        menu_surf = self._canvas_surf
-        assert menu_surf is not None
-
-        # Keep the scroll position within the content
-        content_height = menu_surf.get_height()
-        max_scroll = max(0, content_height - display_ph)
-        menu._scroll = min(max(menu._scroll, 0.0), float(max_scroll))
-        scroll_y = int(round(menu._scroll))
-
-        # Reuse the last GUI surface unless the canvas or the view changed
-        output_key = (self._canvas_version, (display_pw, display_ph), scroll_y)
-        if self._output_cache is not None and output_key == self._output_key:
-            return self._output_cache
-
-        view_rect = pygame.Rect(0, scroll_y, display_pw, display_ph)
-        source_rect = view_rect.clip(menu_surf.get_rect())
-
-        # An opaque canvas covering the window needs no per-pixel alpha; in
-        # the display's format the game's blit becomes a copy instead of a blend
-        if self._canvas_is_opaque and source_rect.size == (display_pw, display_ph):
-            output = menu_surf.subsurface(source_rect).convert()
-        else:
-            # Copy the visible part exactly; MAX against a zeroed surface avoids
-            # darkening semi-transparent pixels as a normal alpha blit would
-            output = pygame.Surface((display_pw, display_ph), pygame.SRCALPHA)
-            if source_rect.width > 0 and source_rect.height > 0:
-                output.blit(menu_surf, (0, 0), source_rect, special_flags=pygame.BLEND_RGBA_MAX)
-
-        self._draw_scrollbar(output, content_height, display_ph, scroll_y, max_scroll)
-
-        self._output_cache = output
-        self._output_key = output_key
-        return output
-
-    def scroll(self, menu: Menu | None, display_size: tuple[int, int], wheel_delta_y: float, dt: float=0.00833) -> None:
-        """Adjust the active menu scroll offset based on mouse wheel input."""
-
-        if menu is None:
-            return
-
-        _SCROLL_ACCEL = 10000.0  # pixels/s^2 applied per wheel notch
-
-        display_pw, display_ph = display_size
-        menu_tree = self._menu_tree_cache
-        if menu_tree is None:
-            return
-        max_scroll = max(0, menu_tree.surf.get_height() - display_ph)
-
-        menu.apply_scroll_impulse(-float(wheel_delta_y) * _SCROLL_ACCEL)
-        menu.integrate_scroll(max_scroll, dt, 0.0, 0.1)
-
-    def select_element_at(self, menu: Menu, pos: tuple[int, int]) -> Element | None:
-        """Return the deepest element under *pos* and update the menu selection if possible."""
-
-        if menu is None:
-            return None
-
-        elements = self.find_elements_at(menu, pos)
-        if elements != [] and elements[0].is_selectable:
-            menu.select_element_by_id(elements[0].id)
-            return elements[0]
-        return None
-
-    def find_elements_at(self, menu: Menu, pos: tuple[int, int]) -> list[Element]:
-        """Return all elements under window position *pos*, deepest first."""
-
-        if self._menu_tree_cache is None or menu is not self._last_menu:
-            return []
-
-        if not self._menu_rect_cache:
-            self._collect_element_layout(self._menu_tree_cache)
-
-        # Window coordinates -> menu content coordinates
-        content_pos = (pos[0], pos[1] + int(round(menu._scroll)))
-
-        collided_elements = []
-        for element, rect, _depth in reversed(self._menu_rect_cache):
-            if rect.collidepoint(content_pos):
-                collided_elements.append(element)
-
-        return collided_elements
-
-    def _render_element_tree(self, root: ContentNode) -> pygame.Surface:
-        """Render the entire element tree onto a single surface and return it."""
-
-        # The root's box may be shared through the box cache, so draw
-        # on a copy rather than on the cached surface
-        root_surf = root.surf.copy()
-        root_pw, root_ph = root.surf.size
-        element_stack = deque([(root, (0, 0), 0)])
-        while element_stack:
-            node, root_position, depth = element_stack.popleft()  # O(1)
-
-            absolute_px = root_position[0] + node.offset[0]
-            absolute_py = root_position[1] + node.offset[1]
-
-            # The root is the canvas itself; blitting it onto itself would
-            # apply its background alpha twice
-            if node is root:
-                for child in node.children:
-                    element_stack.append((child, (absolute_px, absolute_py), depth + 1))
-                continue
-
-            # Nothing to draw for a transparent or zero-sized node, though its
-            # children may still have content
-            if node.is_empty or node.surf.width == 0 or node.surf.height == 0:
-                for child in node.children:
-                    element_stack.append((child, (absolute_px, absolute_py), depth + 1))
-                continue
-
-            # Render the node's shadow here, so that content overlays it
-            shadow_surf = self._draw_shadow(node.element, node.surf)
-            if shadow_surf is not None:
-                shadow_offset_px, shadow_offset_py = self._resolve_measure(node.element.shadow_offset, node.element.shadow_offset_measure, node.surf.width, node.surf.height)
-
-            # Handle fixed elements, no adjustment for flow
-            if node.element.is_fixed:
-                content_pw, content_ph = node.surf.size
-                offset_pw, offset_ph = 0, 0
-
-                # Horizontal alignment of stacked child surfs
-                if node.element.alignment in (AlignmentType.TOPLEFT, AlignmentType.MIDLEFT, AlignmentType.BOTTOMLEFT):
-                    offset_pw = 0
-                elif node.element.alignment in (AlignmentType.MIDTOP, AlignmentType.CENTER, AlignmentType.MIDBOTTOM):
-                    offset_pw = max(0, (root_pw - content_pw) // 2)
-                elif node.element.alignment in (AlignmentType.TOPRIGHT, AlignmentType.MIDRIGHT, AlignmentType.BOTTOMRIGHT):
-                    offset_pw = max(0, root_pw - content_pw)
-
-                # Vertical alignment of stacked child surfs
-                if node.element.alignment in (AlignmentType.TOPLEFT, AlignmentType.MIDTOP, AlignmentType.TOPRIGHT):
-                    offset_ph = 0
-                elif node.element.alignment in (AlignmentType.MIDLEFT, AlignmentType.CENTER, AlignmentType.MIDRIGHT):
-                    offset_ph = max(0, (root_ph - content_ph) // 2)
-                elif node.element.alignment in (AlignmentType.BOTTOMLEFT, AlignmentType.MIDBOTTOM, AlignmentType.BOTTOMRIGHT):
-                    offset_ph = max(0, root_ph - content_ph)
-
-                if shadow_surf is not None:
-                    root_surf.blit(shadow_surf, (offset_pw + shadow_offset_px, offset_ph + shadow_offset_py))
-                root_surf.blit(node.surf, (offset_pw, offset_ph))
-            else:
-                # Render the node's shadow and surface onto the root
-                if shadow_surf is not None:
-                    root_surf.blit(shadow_surf, (absolute_px + shadow_offset_px, absolute_py + shadow_offset_py))
-                root_surf.blit(node.surf, (absolute_px, absolute_py))
-
-            for child in node.children:
-                element_stack.append((child, (absolute_px, absolute_py), depth + 1))
-
-        return root_surf
-
-    def _collect_element_layout(self, root: ContentNode) -> None:
-        """Populate _menu_rect_cache without performing any blits."""
-
-        self._menu_rect_cache = []
-        element_stack: list[tuple[ContentNode, tuple[int, int], int]] = [(root, (0, 0), 0)]
-        while element_stack:
-            node, root_position, depth = element_stack.pop()
-
-            absolute_px = root_position[0] + node.offset[0]
-            absolute_py = root_position[1] + node.offset[1]
-
-            if node.element.is_selectable:
-                hit_element = node.element._hit_target or node.element
-                node_rect = pygame.Rect(absolute_px, absolute_py, node.surf.get_width(), node.surf.get_height())
-                self._menu_rect_cache.append((hit_element, node_rect, depth))
-
-            for child in node.children:
-                element_stack.append((child, (absolute_px, absolute_py), depth + 1))
-
-        self._menu_rect_cache.sort(key=lambda item: item[2], reverse=True)
-
-    """
-    Separate renderers.
-    """
-
-    def _draw_shadow(
-        self,
-        element: Element,
-        element_surf: pygame.Surface,
-    ) -> pygame.Surface | None:
-        """
-        Generates a shadow surface for the given element based on its shadow
-        color, alpha, and scale properties. Returns ``None`` if the shadow
-        would be invisible. Uses a mask of element_surf to create and
-        optionally scale the shadow, applying the specified color and
-        transparency.
-
-        Text and box surfaces are reused across recomposes, so the
-        shadow is cached by the identity of ``element_surf``. The cache holds
-        the source surface, so its id cannot be reused while cached.
-        """
-
-        # Do not create a shadow if it will not be seen
-        if element.shadow_color == TRANSPARENT or element.shadow_alpha == 0x0:
-            return None
-
-        cache_key = (id(element_surf), element.shadow_color, element.shadow_alpha, element.shadow_scale)
-        cached = self._shadow_cache.get(cache_key)
-        if cached is not None and cached[0] is element_surf:
-            return cached[1]
-
-        shadow_surf = self._make_shadow(element, element_surf)
-        self._shadow_cache.put(cache_key, (element_surf, shadow_surf), shadow_surf)
-        return shadow_surf
-
-    @staticmethod
-    def _make_shadow(element: Element, element_surf: pygame.Surface) -> pygame.Surface:
-        """Draw the shadow of ``element_surf`` in the element's shadow colour."""
-
-        # Create a mask of the element to use for shadow
-        mask = pygame.mask.from_surface(element_surf)
-
-        # Scale shadow if needed
-        if element.shadow_scale != 1:
-            mask_surf = mask.to_surface(
-                setcolor=(255, 255, 255),
-                unsetcolor=(0, 0, 0, 0),
-            )
-            original_width, original_height = element_surf.get_size()
-            shadow_width = int(original_width * element.shadow_scale)
-            shadow_height = int(original_height * element.shadow_scale)
-            mask_surf = pygame.transform.smoothscale(mask_surf, (shadow_width, shadow_height))
-            mask = pygame.mask.from_surface(mask_surf)
-
-        shadow_surf = mask.to_surface(
-            setcolor=element.shadow_color,
-            unsetcolor=(0, 0, 0, 0),
-        )
-        shadow_surf.set_alpha(element.shadow_alpha)
-        return shadow_surf
-
-    def _draw_scrollbar(self, viewport: pygame.Surface, content_height: int, viewport_height: int, scroll_y: float, max_scroll: float) -> None:
-        if content_height <= viewport_height:
-            return
-
-        # pygame.draw writes colours without blending. On a transparent
-        # viewport that leaves the bar translucent over the game; on an opaque
-        # one the bar is drawn on its own strip and blended over the menu
-        blend = not viewport.get_flags() & pygame.SRCALPHA
-        track_x = viewport.get_width() - _SCROLLBAR_WIDTH
-        target = pygame.Surface((_SCROLLBAR_WIDTH, viewport_height), pygame.SRCALPHA) if blend else viewport
-        origin_x = 0 if blend else track_x
-
-        track_rect = pygame.Rect(origin_x, 0, _SCROLLBAR_WIDTH, viewport_height)
-        pygame.draw.rect(target, "#181C2780", track_rect)
-
-        thumb_height = max(_SCROLLBAR_MIN_HEIGHT, int(track_rect.height * (viewport_height / content_height)))
-        thumb_travel = track_rect.height - thumb_height
-        thumb_offset = 0 if max_scroll == 0 else int((scroll_y / max_scroll) * thumb_travel)
-        thumb_rect = pygame.Rect(origin_x, track_rect.y + thumb_offset, _SCROLLBAR_WIDTH, thumb_height)
-        pygame.draw.rect(target, "#30384E80", thumb_rect)
-        pygame.draw.rect(target, "#60606080", thumb_rect, 1)
-
-        if blend:
-            viewport.blit(target, (track_x, 0))
-
-    """
-    Menu and element composition.
-    """
-
-    def _compose_menu_tree(self, menu: Menu, display_pw: int, display_ph: int) -> ContentNode:
-        """ """
-
-        root_division: VerticalDivision = menu._div
-        root_node = self._compose_element_node(
-            root_division,
-            range(display_pw, display_pw),
-            range(display_ph, display_ph),
-            selection_id=menu.get_selection_id(),
-        )
-
-        return root_node
-
-    def _compose_element_node(
-        self,
-        element: Element,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """ """
-
-        if not element.is_visible:
-            return ContentNode(element)
-
-        # Resolve dataclass parameter values into pixels
-        overflow_mode = element.overflow
-        extends = overflow_mode == OverflowType.EXTEND
-        clips = overflow_mode == OverflowType.CLIP
-        overflows = overflow_mode == OverflowType.OVERFLOW
-        size_pw, size_ph = self._resolve_measure(
-            element.size,
-            element.size_measure,
-            range_pw.stop,
-            range_ph.stop,
-        )
-        anchor_pw, anchor_ph = self._resolve_measure(
-            element.anchor,
-            element.anchor_measure,
-            range_pw.stop,
-            range_ph.stop,
-        )
-        margin_pw, margin_ph = self._resolve_measure(
-            element.margin,
-            element.margin_measure,
-            range_pw.stop,
-            range_ph.stop,
-        )
-        offset_pw, offset_ph = self._resolve_measure(
-            element.offset,
-            element.offset_measure,
-            range_pw.stop,
-            range_ph.stop,
-        )
-        padding_pw, padding_ph = self._resolve_measure(
-            element.padding,
-            element.padding_measure,
-            range_pw.stop,
-            range_ph.stop,
-        )
-        border_thickness = element.border_thickness
-
-        # Update width range for content element
-        decor_pw: int = 2 * (margin_pw + border_thickness + padding_pw)
-        width_start: int = max(0, min(size_pw - decor_pw, range_pw.stop - decor_pw))
-        width_stop: int = width_start if clips else max(0, range_pw.stop - decor_pw) if extends else width_start + 999 if overflows else 0
-        content_range_pw: range = range(width_start, width_stop)
-
-        # Update height range for content element
-        decor_ph: int = 2 * (margin_ph + border_thickness + padding_ph)
-        height_start: int = max(0, min(size_ph - decor_ph, range_ph.stop - decor_ph))
-        height_stop: int = height_start if clips else max(0, range_ph.stop - decor_ph) if extends else height_start + 999 if overflows else 0
-        content_range_ph: range = range(height_start, height_stop)
-
-        content_node = self._compose_content_node(
-            element,
-            content_range_pw,
-            content_range_ph,
-            selection_id,
-        )
-        content_element = content_node.element
-        content_pw, content_ph = content_node.surf.size
-        # TODO: offset is not handled as well as it could be
-        content_node.offset = (offset_pw, offset_ph)
-
-        if clips:
-            clip_coords = (0, 0, range_pw.start, range_pw.stop)
-            content_node.surf = content_node.surf.subsurface(clip_coords).copy()
-
-        inner_pw, inner_ph = content_range_pw.start, content_range_ph.start
-
-        # Bounding box of the content and all its descendants
-        total_pw, total_ph = content_node.extent()
-        if extends:
-            inner_pw = max(inner_pw, total_pw)
-            inner_ph = max(inner_ph, total_ph)
-
-        # Position content within the inner area according to element.alignment.
-        # Use total_pw/ph (bounding box of all children) because many composers
-        # return a blank_surf() (0x0) and store visuals entirely in child nodes.
-        alignment_offset_pw, alignment_offset_ph = 0, 0
-
-        # Horizontal alignment
-        if element.alignment in (AlignmentType.MIDTOP, AlignmentType.CENTER, AlignmentType.MIDBOTTOM):
-            alignment_offset_pw = max(0, (inner_pw - total_pw) // 2)
-        elif element.alignment in (AlignmentType.TOPRIGHT, AlignmentType.MIDRIGHT, AlignmentType.BOTTOMRIGHT):
-            alignment_offset_pw = max(0, inner_pw - total_pw)
-
-        # Vertical alignment
-        if element.alignment in (AlignmentType.MIDLEFT, AlignmentType.CENTER, AlignmentType.MIDRIGHT):
-            alignment_offset_ph = max(0, (inner_ph - total_ph) // 2)
-        elif element.alignment in (AlignmentType.BOTTOMLEFT, AlignmentType.MIDBOTTOM, AlignmentType.BOTTOMRIGHT):
-            alignment_offset_ph = max(0, inner_ph - total_ph)
-
-        content_node.offset = (decor_pw // 2 + alignment_offset_pw + offset_pw, decor_ph // 2 + alignment_offset_ph + offset_ph)
-
-        # Set up to apply decorations to the element
-        final_pw = inner_pw + decor_pw
-        final_ph = inner_ph + decor_ph
-        border_rect = pygame.Rect(margin_pw, margin_ph, final_pw - 2 * margin_pw, final_ph - 2 * margin_ph)
-        background_rect = border_rect.inflate(-2 * border_thickness, -2 * border_thickness)
-
-        # Decorations that would be drawn fully transparent are skipped
-        border_color = None
-        if border_rect.width > 0 and border_rect.height > 0 and border_thickness > 0:
-            border_color = self._apply_alpha(self._parse_hex_color(content_element.border_color), content_element.border_alpha)
-            if border_color.a == 0:
-                border_color = None
-        bg_color = None
-        if background_rect.width > 0 and background_rect.height > 0:
-            bg_color = self._apply_alpha(self._parse_hex_color(content_element.background_color), content_element.background_alpha)
-            if bg_color.a == 0:
-                bg_color = None
-
-        # The box depends only on these values, so identical boxes share one
-        # surface across elements and recomposes. Surfaces in the tree are
-        # never drawn on; the root is copied before it becomes the canvas
-        box_key = (
-            final_pw,
-            final_ph,
-            margin_pw,
-            margin_ph,
-            border_thickness,
-            tuple(border_color) if border_color is not None else None,
-            tuple(bg_color) if bg_color is not None else None,
-        )
-        final_surf = self._box_cache.get(box_key)
-        if final_surf is None:
-            final_surf = pygame.Surface((final_pw, final_ph), pygame.SRCALPHA)
-            if border_color is not None:
-                pygame.draw.rect(final_surf, border_color, border_rect)
-            if bg_color is not None:
-                pygame.draw.rect(final_surf, bg_color, background_rect)
-            self._box_cache.put(box_key, final_surf, final_surf)
-
-        # Compose a final element node
-        element_node = ContentNode(
-            content_element,
-            final_surf,
-            (offset_pw, offset_ph),
-            children=[content_node],
-            is_empty=border_color is None and bg_color is None,
-        )
-
-        # Whether every pixel of the box is painted opaquely
-        painted = border_rect if border_color is not None else background_rect
-        element_node.is_opaque = (
-            final_pw > 0
-            and final_ph > 0
-            and margin_pw == 0
-            and margin_ph == 0
-            and painted.size == (final_pw, final_ph)
-            and (border_color is None or border_color.a == 255)
-            and (background_rect.width <= 0 or background_rect.height <= 0 or (bg_color is not None and bg_color.a == 255))
-            and element.rotation == RotationType.NONE
-        )
-
-        # TODO: Should be fixed to function correctly
-        def rotate_subtree(node: ContentNode, rotation: RotationType):
-            node._extent = None  # Surfaces and offsets change below
-            x, y = node.offset
-            if rotation == RotationType.LEFT:
-                node.surf = pygame.transform.rotate(node.surf, 90)
-                node.offset = (-y, x)
-            elif rotation == RotationType.RIGHT:
-                node.surf = pygame.transform.rotate(node.surf, -90)
-                node.offset = (y, -x)
-            elif rotation == RotationType.UPTURNED:
-                node.surf = pygame.transform.rotate(node.surf, 180)
-                node.offset = (-x, -y)
-
-            for child in node.children:
-                rotate_subtree(child, rotation)
-
-        # Handle rotation on final element
-        if element.rotation != RotationType.NONE:
-            rotate_subtree(element_node, element.rotation)
-
-        # Set element surf to this final composed surface
-        return element_node
-
-    """
-    Content rendering.
-    """
-
-    def _compose_content_node(
-        self,
-        element: Element,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-
-        if range_pw.stop == 0 and range_ph.stop == 0:
-            return ContentNode()
-
-        # Match the current element to its associated renderer by walking the MRO,
-        # so subclasses fall back to the nearest registered parent composer.
-        element_type = type(element)
-        if element_type in self._composer_cache:
-            renderer = self._composer_cache[element_type]
-        else:
-            renderer = None
-            for cls in element_type.mro():
-                renderer = self._node_composers.get(cls)
-                if renderer is not None:
-                    break
-            self._composer_cache[element_type] = renderer
-
-        if renderer is not None:
-            return renderer(
-                element,
-                range_pw,
-                range_ph,
-                selection_id,
-            )
-        return ContentNode()
-
-    def _compose_division_node(
-        self,
-        element: HorizontalDivision | VerticalDivision,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """
-        Constructs a ContentNode for a horizontal or vertical division element
-        by arranging its visible child elements with appropriate gaps,
-        alignment, and offsets, based on available and restricted dimensions and
-        selection state. Returns a node representing the composed division and
-        its children.
-        """
-
-        is_selected = selection_id == element.id
-
-        # Resolve gap parameter with respect to parent
-        gap_pw, gap_ph = self._resolve_measure(
-            element.gap,
-            element.gap_measure,
-            range_pw.stop,
-            range_ph.stop,
-        )
-
-        # Collect child surfaces by collecting their nodes and accumulate size
-        child_nodes: list[ContentNode] = []
-        division_pw, division_ph = 0, 0
-        for child in element.elements:
-            if not child.is_visible:
-                continue
-            node = self._compose_element_node(
-                child,
-                range_pw,
-                range_ph,
-                selection_id if not is_selected else child.id,
-            )
-            child_nodes.append(node)
-
-            # Do not evaluate for fixed elements
-            if element.is_fixed:
-                continue
-
-            if isinstance(element, HorizontalDivision):
-                division_pw += node.surf.width
-                if len(child_nodes) > 1:
-                    division_pw += gap_pw
-                division_ph = max(division_ph, node.surf.height)
-
-            elif isinstance(element, VerticalDivision):  # VerticalDivision
-                division_ph += node.surf.height
-                if len(child_nodes) > 1:
-                    division_ph += gap_ph
-                division_pw = max(division_pw, node.surf.width)
-
-        if not child_nodes:
-            return ContentNode(element, blank_surf())
-
-        # Apply offsets to child nodes with respect to parent division
-        node_offset_pw, node_offset_ph = 0, 0
-        for node in child_nodes:
-
-            # Do not evaluate for fixed elements
-            if node.element.is_fixed:
-                continue
-
-            if isinstance(element, HorizontalDivision):
-                if node.element.justify == JustifyType.START:
-                    node_offset_ph = 0
-                elif node.element.justify == JustifyType.CENTER:
-                    node_offset_ph = (division_ph - node.surf.height) // 2
-                elif node.element.justify == JustifyType.END:
-                    node_offset_ph = division_ph - node.surf.height
-                node.offset = (node_offset_pw, node_offset_ph)
-                node_offset_pw += node.surf.width + gap_pw
-
-            elif isinstance(element, VerticalDivision):
-                if node.element.justify == JustifyType.START:
-                    node_offset_pw = 0
-                elif node.element.justify == JustifyType.CENTER:
-                    node_offset_pw = (division_pw - node.surf.width) // 2
-                elif node.element.justify == JustifyType.END:
-                    node_offset_pw = division_pw - node.surf.width
-                node.offset = (node_offset_pw, node_offset_ph)
-                node_offset_ph += node.surf.height + gap_ph
-
-        # Compose computed value and return division node
-        return ContentNode(element, blank_surf(), children=child_nodes)
-
-    def _compose_gap_node(
-        self,
-        element: Text,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """
-        Creates a ContentNode representing a gap by generating a blank surface
-        of the specified restricted size, filling it with the background color
-        and alpha from the given element.
-        """
-        gap_surf = blank_surf((range_pw.start, range_ph.start))
-        if gap_surf.width == 0 or gap_surf.height == 0 or element.background_alpha == 0 or self._parse_hex_color(element.background_color).a == 0:
-            return ContentNode(element, gap_surf, is_empty=True)
-        gap_surf.fill(element.background_color)
-        gap_surf.set_alpha(element.background_alpha)
-        return ContentNode(element, gap_surf)
-
-    def _compose_text_node(
-        self,
-        element: Text,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """ """
-        text_surf = self._make_text_surf(element, wraplength=range_pw.stop)
-        return ContentNode(element, text_surf)
-
-    def _compose_button_node(
-        self,
-        element: Button,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """
-        Creates a ContentNode for a button element by composing its text node,
-        determining selection state, and generating a blank surface sized to the
-        text. The resulting node represents the button with its child text node.
-        """
-
-        is_selected = selection_id == element.id
-        render_element = element if not is_selected else replace(element, label=replace(element.label, text_color=element.selected_text_color))
-        _set_hit_target(render_element, element)  # ensure clicks map to original element
-
-        text_selection_id = render_element.label.id if is_selected else selection_id
-        text_child = self._compose_element_node(render_element.label, range_pw, range_ph, text_selection_id)
-        return ContentNode(render_element, blank_surf(), children=[text_child])
-
-    def _compose_input_field_node(
-        self,
-        element: InputField,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """ """
-        is_selected = selection_id == element.id
-        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
-        cursor = element.get_cursor_glyph()
-        self._drawn_cursors.append((element, cursor))  # Redraw when this glyph blinks
-        text_child = replace(element.value, text=element.get_field() + cursor)
-        eff_value_child = replace(text_child, text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING) if element.is_open else replace(text_child, text_color=element.edited_text_color) if element.is_edited else text_child
-        eff_value_child = replace(eff_value_child, text_color=element.invalid_text_color) if not element.authenticate() else replace(eff_value_child, text_color=element.edited_text_color) if element.is_altered() else eff_value_child
-        text_selection_id = eff_element.label.id if is_selected else selection_id
-        hint_node = self._compose_element_node(eff_element.hint, range_pw, range_ph, text_selection_id) if len(element.get_field()) == 0 else None
-        text_node = self._compose_element_node(eff_value_child, range_pw, range_ph, text_selection_id)
-        _set_hit_target(eff_element, element)  # ensure clicks map to original element
-        return ContentNode(eff_element, blank_surf(), children=[hint_node, text_node] if hint_node else [text_node])
-
-    def _compose_toggle_node(
-        self,
-        element: Toggle,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """"""
-        is_selected = selection_id == element.id
-        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
-        eff_label = replace(element.label, text=element.toggled_text) if element.value else element.label
-        eff_label = replace(eff_label, text_color=element.edited_text_color) if element.is_called else eff_label
-        label_node = self._compose_element_node(eff_label, range_pw, range_ph, selection_id)
-        _set_hit_target(eff_element, element)  # route clicks on children to the toggle
-        return ContentNode(eff_element, blank_surf(), children=[label_node])
-
-    def _compose_fill_node(
-        self,
-        element: Fill,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """"""
-        fill_surf = blank_surf((range_pw.stop, range_ph.stop))
-        return ContentNode(element, fill_surf, is_empty=True)
-
-    def _compose_image_node(
-        self,
-        element: Image,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        """"""
-        image_surf = self.images.get_image(element.image_path)
-        return ContentNode(element, image_surf)
-
-    def _compose_slider_node(
-        self,
-        element: Image,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        image_surf = blank_surf((1, 1))
-        return ContentNode(element, image_surf, is_empty=True)
-
-    def _compose_selector_node(
-        self,
-        element: Selector,
-        range_pw: range,
-        range_ph: range,
-        selection_id: str | None,
-    ) -> ContentNode:
-        is_selected = selection_id == element.id
-        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
-        _set_hit_target(eff_element, element)
-
-        selection_text = eff_element.selection_text
-        selection_text = replace(selection_text, text=element.selection())
-        selection_text = replace(selection_text, text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING) if element.is_open else selection_text
-        selection_text = replace(selection_text, text_color=eff_element.altered_selection_color) if element.is_altered() else selection_text
-
-        left_arrow = eff_element.left_arrow
-        left_arrow = replace(left_arrow, text_color=eff_element.disabled_arrow_color) if element.buffer_index() == 0 else left_arrow
-
-        right_arrow = eff_element.right_arrow
-        right_arrow = replace(right_arrow, text_color=eff_element.disabled_arrow_color) if element.buffer_index() == len(element.selections) - 1 else right_arrow
-
-        div_element = HorizontalDivision(elements=[left_arrow, selection_text, right_arrow])
-        # left_arrow_node = self._compose_element_node(element.left_arrow, range_pw, range_ph, selection_id)
-        # right_arrow_node = self._compose_element_node(element.right_arrow, range_pw, range_ph, selection_id)
-        # selection_node = self._compose_element_node(element.selection_text, range_pw, range_ph, selection_id)
-        div_node = self._compose_element_node(div_element, range_pw, range_ph, selection_id)
-        return ContentNode(eff_element, blank_surf(), children=[div_node])
-
-    """
-    Utility helpers
-    """
-
-    def _make_text_surf(self, text_element: Text, text_color=None, background_color=None, wraplength=None) -> pygame.Surface:
-        """Render a ``Text`` element's string to a surface."""
-        wrap_pw = (wraplength if text_element.is_wrappable else 0) or 0
-        eff_text_color = text_color or text_element.text_color
-        cache_key = (
-            text_element.font_name,
-            text_element.font_size,
-            text_element.text,
-            eff_text_color,
-            background_color,
-            text_element.text_background,
-            text_element.text_decorations,
-            wrap_pw,
-            text_element.is_wrappable,
-            text_element.text_alpha,
-        )
-        cached = self._text_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        font = self.fonts.get_font(text_element.font_name, text_element.font_size)
-        decorations = text_element.text_decorations
-        self._apply_text_decorations(font, decorations)
-        antialias = bool(decorations & TextDecorationType.ANTIALIASING)
-        text = font.render(
-            text_element.text or "",
-            antialias,
-            eff_text_color,
-            background_color or None,
-            wrap_pw,
-        ).convert_alpha()
-        self._reset_text_decorations(font)
-        trim = 2 * int(text_element.font_size / 18) if len(text_element.text) > 0 and text_element.text[-1].isupper() else 0
-
-        surf = blank_surf((text.width - trim, text.height))
-        if text_element.text_background != TRANSPARENT:
-            bg_color = pygame.Color(text_element.text_background)
-            surf.fill(bg_color)
-
-        surf.blit(text, (0, 0))
-        surf.set_alpha(text_element.text_alpha)
-        self._text_cache.put(cache_key, surf, surf)
-        return surf
-
-    def _parse_hex_color(self, rgba: RGBA):
-        """
-        Parses a hex RGBA color string (e.g., #RRGGBBAA) into a tuple of four
-        integers (r, g, b, a), caching results for efficiency. Returns the
-        cached tuple if available.
-        """
-
-        if rgba not in self._hex_color_cache:
-            c = rgba.lstrip("#")
-            r, g, b, a = (int(c[i : i + 2], 16) for i in (0, 2, 4, 6))
-            self._hex_color_cache[rgba] = pygame.Color(r, g, b, a)
-        return self._hex_color_cache[rgba]
-
-    @staticmethod
-    def _apply_text_decorations(font: pygame.font.Font, decorations: TextDecorationType | None) -> None:
-        """Set bold/italic/underline/strikethrough on *font*."""
-        if decorations is None:
-            return
+class _TextCache(_SurfaceCache):
+    """Rendered strings, keyed by every ``Text`` field that reaches the pixels plus the wrap width."""
+
+    def __init__(self, fonts: FontManager, max_bytes: int = _TEXT_CACHE_BYTES) -> None:
+        super().__init__(max_bytes)
+        self._fonts = fonts
+
+    def get_surf(self, text: Text, wrap_pw: int) -> pygame.Surface:
+        """``text`` rendered with its font, decorations, highlight and alpha, wrapped at ``wrap_pw`` when wrappable."""
+        wrap_pw = wrap_pw if text.is_wrappable else 0
+        key = (text.font_name, text.font_size, text.text, text.text_color, text.text_background, text.text_decorations, wrap_pw, text.text_alpha)
+        surf = self._get(key)
+        if surf is not None:
+            return surf
+
+        font = self._fonts.get_font(text.font_name, text.font_size)
+        decorations = text.text_decorations
         font.set_bold(bool(decorations & TextDecorationType.BOLD))
         font.set_italic(bool(decorations & TextDecorationType.ITALIC))
         font.set_underline(bool(decorations & TextDecorationType.UNDERLINE))
         font.set_strikethrough(bool(decorations & TextDecorationType.STRIKETHROUGH))
+        glyphs = font.render(text.text, bool(decorations & TextDecorationType.ANTIALIASING), text.text_color, None, wrap_pw).convert_alpha()
+
+        # The pixel font leaves a gap after a trailing capital that the trim takes back
+        trim = 2 * int(text.font_size / 18) if text.text and text.text[-1].isupper() else 0
+        surf = _make_surf(glyphs.get_width() - trim, glyphs.get_height())
+        if text.text_background != TRANSPARENT:
+            surf.fill(pygame.Color(text.text_background))
+        surf.blit(glyphs, (0, 0))
+        surf.set_alpha(text.text_alpha)
+        self._put(key, surf, surf)
+        return surf
+
+
+class _BoxCache(_SurfaceCache):
+    """Element boxes, one surface shared by every element with the same geometry and colours."""
+
+    def __init__(self, max_bytes: int = _BOX_CACHE_BYTES) -> None:
+        super().__init__(max_bytes)
+
+    def get_surf(self, pw: int, ph: int, margin_pw: int, margin_ph: int, border_thickness: int, border_color: pygame.Color | None, background_color: pygame.Color | None) -> pygame.Surface | None:
+        """The border and background of a box, or ``None`` when neither would be visible."""
+        if border_color is None and background_color is None:
+            return None
+        key = (pw, ph, margin_pw, margin_ph, border_thickness, tuple(border_color) if border_color is not None else None, tuple(background_color) if background_color is not None else None)
+        surf = self._get(key)
+        if surf is not None:
+            return surf
+
+        border_rect = pygame.Rect(margin_pw, margin_ph, pw - 2 * margin_pw, ph - 2 * margin_ph)
+        surf = _make_surf(pw, ph)
+        if border_color is not None:
+            pygame.draw.rect(surf, border_color, border_rect)
+        if background_color is not None:
+            pygame.draw.rect(surf, background_color, border_rect.inflate(-2 * border_thickness, -2 * border_thickness))
+        self._put(key, surf, surf)
+        return surf
+
+
+class _ShadowCache(_SurfaceCache):
+    """Shadows of cached surfaces, keyed by the identity of the source and the shadow style."""
+
+    def __init__(self, max_bytes: int = _SHADOW_CACHE_BYTES) -> None:
+        super().__init__(max_bytes)
+
+    def get_surf(self, element: Element, source_surf: pygame.Surface) -> pygame.Surface | None:
+        """The mask of ``source_surf`` in the element's shadow colour, alpha and scale, or ``None`` when invisible."""
+        if element.shadow_color == TRANSPARENT or element.shadow_alpha == 0:
+            return None
+        key = (id(source_surf), element.shadow_color, element.shadow_alpha, element.shadow_scale)
+        cached = self._get(key)
+        if cached is not None and cached[0] is source_surf:
+            return cached[1]
+
+        mask = pygame.mask.from_surface(source_surf)
+        if element.shadow_scale != 1:
+            mask_surf = mask.to_surface(setcolor=(255, 255, 255), unsetcolor=(0, 0, 0, 0))
+            scaled_pw = int(source_surf.get_width() * element.shadow_scale)
+            scaled_ph = int(source_surf.get_height() * element.shadow_scale)
+            mask = pygame.mask.from_surface(pygame.transform.smoothscale(mask_surf, (scaled_pw, scaled_ph)))
+        shadow_surf = mask.to_surface(setcolor=element.shadow_color, unsetcolor=(0, 0, 0, 0))
+        shadow_surf.set_alpha(element.shadow_alpha)
+        self._put(key, (source_surf, shadow_surf), shadow_surf)
+        return shadow_surf
+
+
+# ----------------------------------------------------------------------------
+
+
+@dataclass(eq=False)
+class _MenuTree:
+    """One menu composed at one window size and render version, and everything made from it."""
+
+    class Space(NamedTuple):
+        """The room a content composer is given, as a range per axis."""
+
+        range_pw: range
+        range_ph: range
+
+    @dataclass(slots=True)
+    class Node:
+        """One composed element: its box, its content and its children."""
+
+        element: Element
+        content_surf: pygame.Surface | None = None
+        children: list[_MenuTree.Node] = field(default_factory=list)
+
+        hit_target: Element | None = None
+        box_surf: pygame.Surface | None = None
+        pw: int = 0
+        ph: int = 0
+        offset: tuple[int, int] = (0, 0)
+        inner_offset: tuple[int, int] = (0, 0)
+        is_opaque: bool = False
+
+        def extent(self) -> tuple[int, int]:
+            """Width and height of this box and every descendant that overflows it, relative to the box."""
+            inner_pw, inner_ph = self.content_surf.get_size() if self.content_surf is not None else (0, 0)
+            for child in self.children:
+                if child.element.is_fixed:
+                    continue
+                child_pw, child_ph = child.extent()
+                inner_pw = max(inner_pw, child.offset[0] + child_pw)
+                inner_ph = max(inner_ph, child.offset[1] + child_ph)
+            return max(self.pw, self.inner_offset[0] + inner_pw), max(self.ph, self.inner_offset[1] + inner_ph)
+
+    menu: Menu
+    size: tuple[int, int]
+    render_version: int
+    selection_id: str | None
+
+    root: Node | None = None
+    rendered_glyphs: list[tuple[InputField, str]] = field(default_factory=list)
+    hit_rects: list[tuple[Element, pygame.Rect]] = field(default_factory=list)
+    facade_surf: pygame.Surface | None = None
+    output_surf: pygame.Surface | None = None
+    output_scroll_py: int | None = None
+
+    @property
+    def is_opaque(self) -> bool:
+        """Whether the facade covers every pixel of the window with alpha 255."""
+        return self.root is not None and self.root.is_opaque
+
+    def is_current(self, menu: Menu, size: tuple[int, int]) -> bool:
+        """Whether this tree still shows ``menu`` at ``size``, with no element edited and no rendered cursor glyph changed since."""
+        return (
+            menu is self.menu
+            and size == self.size
+            and Element._render_version == self.render_version
+            and all(input_field.get_cursor_glyph() == glyph for input_field, glyph in self.rendered_glyphs)
+        )
+
+    def find_at(self, facade_pos: tuple[int, int]) -> list[Element]:
+        """Every element under a facade position, deepest first."""
+        return [element for element, rect in reversed(self.hit_rects) if rect.collidepoint(facade_pos)]
+
+
+# ----------------------------------------------------------------------------
+
+
+class MenuRenderer:
+    """Composes a menu's element tree and returns it as a window-sized surface."""
+
+    def __init__(self) -> None:
+        self.fonts: FontManager = FontManager()
+        self.images: ImageManager = ImageManager()
+
+        self._text_cache = _TextCache(self.fonts)
+        self._box_cache = _BoxCache()
+        self._shadow_cache = _ShadowCache()
+
+        self._menu_tree: _MenuTree | None = None
+
+    # ------------------------------------------------------------------------
+
+    def render(self, menu: Menu, size: tuple[int, int]) -> pygame.Surface:
+        tree = self._menu_tree
+        if tree is None or not tree.is_current(menu, size):
+            tree = self._menu_tree = self._compose_tree(menu, size)
+            self._render_facade(tree)
+        return self._present_output(tree)
+
+    # ------------------------------------------------------------------------
+
+    def _compose_tree(self, menu: Menu, size: tuple[int, int]) -> _MenuTree:
+        tree = _MenuTree(menu, size, Element._render_version, menu.get_selection_id())
+        tree.root = self._compose_node(menu._div, tree, _MenuTree.Space(range(size[0], size[0]), range(size[1], size[1])))
+        return tree
+
+    def _compose_node(self, element: Element, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        if not element.is_visible:
+            return _MenuTree.Node(element, hit_target=element)
+
+        size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
+        margin_pw, margin_ph = self._resolve_measure(element.margin, element.margin_measure, space)
+        padding_pw, padding_ph = self._resolve_measure(element.padding, element.padding_measure, space)
+        offset_px, offset_py = self._resolve_measure(element.offset, element.offset_measure, space)
+        border_thickness = element.border_thickness
+        decor_pw = 2 * (margin_pw + border_thickness + padding_pw)
+        decor_ph = 2 * (margin_ph + border_thickness + padding_ph)
+
+        # TODO: Write a 1-line comment here.
+        inner_pw = max(0, min(size_pw - decor_pw, space.range_pw.stop - decor_pw))
+        inner_ph = max(0, min(size_ph - decor_ph, space.range_ph.stop - decor_ph))
+        if element.overflow == OverflowType.EXTEND:
+            range_pw = range(inner_pw, max(0, space.range_pw.stop - decor_pw))
+            range_ph = range(inner_ph, max(0, space.range_ph.stop - decor_ph))
+            inner_space = _MenuTree.Space(range_pw, range_ph)
+        elif element.overflow == OverflowType.OVERFLOW:
+            range_pw = range(inner_pw, inner_pw + 999)
+            range_ph = range(inner_ph, inner_ph + 999)
+            inner_space = _MenuTree.Space(range_pw, range_ph)
+        else:
+            range_pw = range(inner_pw, inner_pw)
+            range_ph = range(inner_ph, inner_ph)
+            inner_space = _MenuTree.Space(range_pw, range_ph)
+
+        node = self._compose_content(element, tree, inner_space)
+        content_pw, content_ph = node.extent()
+        if element.overflow == OverflowType.EXTEND:
+            inner_pw, inner_ph = max(inner_pw, content_pw), max(inner_ph, content_ph)
+        align_px, align_py = self._align_box(element.alignment, inner_pw, inner_ph, content_pw, content_ph)
+
+        node.hit_target = element
+        node.pw, node.ph = inner_pw + decor_pw, inner_ph + decor_ph
+        node.offset = (offset_px, offset_py)
+        node.inner_offset = (decor_pw // 2 + align_px, decor_ph // 2 + align_py)
+
+        border_rect = pygame.Rect(margin_pw, margin_ph, node.pw - 2 * margin_pw, node.ph - 2 * margin_ph)
+        background_rect = border_rect.inflate(-2 * border_thickness, -2 * border_thickness)
+        border_color = _color(node.element.border_color, node.element.border_alpha) if border_thickness > 0 and border_rect.width > 0 and border_rect.height > 0 else None
+        background_color = _color(node.element.background_color, node.element.background_alpha) if background_rect.width > 0 and background_rect.height > 0 else None
+        border_color = border_color if border_color is not None and border_color.a > 0 else None
+        background_color = background_color if background_color is not None and background_color.a > 0 else None
+        node.box_surf = self._box_cache.get_surf(node.pw, node.ph, margin_pw, margin_ph, border_thickness, border_color, background_color)
+
+        painted_rect = border_rect if border_color is not None else background_rect
+        node.is_opaque = (
+            node.pw > 0
+            and node.ph > 0
+            and margin_pw == 0
+            and margin_ph == 0
+            and painted_rect.size == (node.pw, node.ph)
+            and (border_color is None or border_color.a == 255)
+            and (background_rect.width <= 0 or background_rect.height <= 0 or (background_color is not None and background_color.a == 255))
+            and element.rotation == RotationType.NONE
+        )
+        return node
+
+    @singledispatchmethod
+    def _compose_content(self, element: Element, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        return _MenuTree.Node(element)
+
+    @_compose_content.register(Division)
+    def _(self, element: Division, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        gap_pw, gap_ph = self._resolve_measure(element.gap, element.gap_measure, space)
+        is_vertical = isinstance(element, VerticalDivision)
+        children = [self._compose_node(child, tree, space) for child in element.elements if child.is_visible]
+        flowed = [child for child in children if not child.element.is_fixed]
+
+        if is_vertical:
+            flow_pw = max((child.pw for child in flowed), default=0)
+            flow_ph = sum(child.ph for child in flowed) + gap_ph * max(0, len(flowed) - 1)
+        else:
+            flow_pw = sum(child.pw for child in flowed) + gap_pw * max(0, len(flowed) - 1)
+            flow_ph = max((child.ph for child in flowed), default=0)
+
+        flow_px, flow_py = 0, 0
+        for child in flowed:
+            if is_vertical:
+                across = flow_pw - child.pw
+                flow_px = 0 if child.element.justify == JustifyType.START else across // 2 if child.element.justify == JustifyType.CENTER else across
+            else:
+                across = flow_ph - child.ph
+                flow_py = 0 if child.element.justify == JustifyType.START else across // 2 if child.element.justify == JustifyType.CENTER else across
+            child.offset = (child.offset[0] + flow_px, child.offset[1] + flow_py)
+            if is_vertical:
+                flow_py += child.ph + gap_ph
+            else:
+                flow_px += child.pw + gap_pw
+
+        return _MenuTree.Node(element, children=children)
+
+    @_compose_content.register(Gap)
+    def _(self, element: Gap, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        gap_pw, gap_ph = space.range_pw.start, space.range_ph.start
+        if gap_pw == 0 or gap_ph == 0 or _color(element.background_color, element.background_alpha).a == 0:
+            return _MenuTree.Node(element)
+        gap_surf = _make_surf(gap_pw, gap_ph)
+        gap_surf.fill(element.background_color)
+        gap_surf.set_alpha(element.background_alpha)
+        return _MenuTree.Node(element, content_surf=gap_surf)
+
+    @_compose_content.register(Fill)
+    def _(self, element: Fill, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        return _MenuTree.Node(element, content_surf=_make_surf(space.range_pw.stop, space.range_ph.stop))
+
+    @_compose_content.register(Text)
+    def _(self, element: Text, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        return _MenuTree.Node(element, content_surf=self._text_cache.get_surf(element, space.range_pw.stop))
+
+    @_compose_content.register(Image)
+    def _(self, element: Image, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        return _MenuTree.Node(element, content_surf=self.images.get_image(element.image_path))
+
+    @_compose_content.register(Button)
+    def _(self, element: Button, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        is_selected = tree.selection_id == element.id
+        eff_element = replace(element, label=replace(element.label, text_color=element.selected_text_color)) if is_selected else element
+        return _MenuTree.Node(eff_element, children=[self._compose_node(eff_element.label, tree, space)])
+
+    @_compose_content.register(Toggle)
+    def _(self, element: Toggle, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        is_selected = tree.selection_id == element.id
+        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
+        eff_label = replace(element.label, text=element.toggled_text) if element.value else element.label
+        eff_label = replace(eff_label, text_color=element.edited_text_color) if element.is_called else eff_label
+        return _MenuTree.Node(eff_element, children=[self._compose_node(eff_label, tree, space)])
+
+    @_compose_content.register(Slider)
+    def _(self, element: Slider, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        return _MenuTree.Node(element)
+
+    @_compose_content.register(Selector)
+    def _(self, element: Selector, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        is_selected = tree.selection_id == element.id
+        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
+
+        selection_text = replace(element.selection_text, text=element.selection())
+        if element.is_open:
+            selection_text = replace(selection_text, text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING)
+        if element.is_altered():
+            selection_text = replace(selection_text, text_color=element.altered_selection_color)
+        left_arrow = replace(element.left_arrow, text_color=element.disabled_arrow_color) if element.buffer_index() == 0 else element.left_arrow
+        right_arrow = replace(element.right_arrow, text_color=element.disabled_arrow_color) if element.buffer_index() == len(element.selections) - 1 else element.right_arrow
+
+        row = HorizontalDivision(elements=[left_arrow, selection_text, right_arrow])
+        return _MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
+
+    @_compose_content.register(InputField)
+    def _(self, element: InputField, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        is_selected = tree.selection_id == element.id
+        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
+
+        glyph = element.get_cursor_glyph()
+        tree.rendered_glyphs.append((element, glyph))
+        value_text = replace(element.value, text=element.get_field() + glyph)
+        if element.is_open:
+            value_text = replace(value_text, text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING)
+        elif element.is_edited:
+            value_text = replace(value_text, text_color=element.edited_text_color)
+        if not element.authenticate():
+            value_text = replace(value_text, text_color=element.invalid_text_color)
+        elif element.is_altered():
+            value_text = replace(value_text, text_color=element.edited_text_color)
+
+        children = [self._compose_node(element.hint, tree, space)] if not element.get_field() else []
+        children.append(self._compose_node(value_text, tree, space))
+        return _MenuTree.Node(eff_element, children=children)
+
+    # ------------------------------------------------------------------------
+
+    def _render_facade(self, tree: _MenuTree) -> None:
+        root = tree.root
+        assert root is not None
+        facade = root.box_surf.copy() if root.box_surf is not None else _make_surf(root.pw, root.ph)
+        tree.hit_rects = []
+        if root.element.is_selectable:
+            tree.hit_rects.append((root.hit_target or root.element, facade.get_rect()))
+        for child in root.children:
+            self._render_node(child, tree, facade, root.inner_offset)
+        tree.facade_surf = facade
+
+    def _render_node(self, node: _MenuTree.Node, tree: _MenuTree, facade: pygame.Surface, origin: tuple[int, int]) -> None:
+        element = node.element
+        if element.is_fixed:
+            origin = self._align_box(element.alignment, facade.get_width(), facade.get_height(), node.pw, node.ph)
+        origin_px, origin_py = origin[0] + node.offset[0], origin[1] + node.offset[1]
+
+        # A rotated subtree is rendered upright on its own surface, then turned once
+        is_rotated = element.rotation != RotationType.NONE
+        target = _make_surf(*node.extent()) if is_rotated else facade
+        box_px, box_py = (0, 0) if is_rotated else (origin_px, origin_py)
+
+        for surf in (node.box_surf, node.content_surf):
+            if surf is None:
+                continue
+            at_px, at_py = (box_px, box_py) if surf is node.box_surf else (box_px + node.inner_offset[0], box_py + node.inner_offset[1])
+            shadow_surf = self._shadow_cache.get_surf(element, surf)
+            if shadow_surf is not None:
+                shadow_px, shadow_py = self._resolve_measure(element.shadow_offset, element.shadow_offset_measure, _MenuTree.Space(range(surf.get_width()), range(surf.get_height())))
+                target.blit(shadow_surf, (at_px + shadow_px, at_py + shadow_py))
+            target.blit(surf, (at_px, at_py))
+
+        if element.is_selectable:
+            tree.hit_rects.append((node.hit_target or node.element, pygame.Rect(origin_px, origin_py, node.pw, node.ph)))
+
+        previous_clip = target.get_clip()
+        if element.overflow == OverflowType.CLIP:
+            target.set_clip(pygame.Rect(box_px, box_py, node.pw, node.ph).clip(previous_clip))
+        inner_px, inner_py = box_px + node.inner_offset[0], box_py + node.inner_offset[1]
+        for child in node.children:
+            self._render_node(child, tree, target, (inner_px, inner_py))
+        target.set_clip(previous_clip)
+
+        if is_rotated:
+            facade.blit(pygame.transform.rotate(target, _ROTATION_DEGREES[element.rotation]), (origin_px, origin_py))
+
+    def _render_scrollbar(self, output: pygame.Surface, facade_ph: int, scroll_py: int) -> None:
+        output_ph = output.get_height()
+        if facade_ph <= output_ph:
+            return
+
+        # pygame.draw writes without blending, so on an opaque output the bar is
+        # rendered on its own strip and blended over the menu
+        is_blended = not output.get_flags() & pygame.SRCALPHA
+        strip = pygame.Surface((_SCROLLBAR_PW, output_ph), pygame.SRCALPHA) if is_blended else output
+        track_px = 0 if is_blended else output.get_width() - _SCROLLBAR_PW
+
+        thumb_ph = max(_SCROLLBAR_MIN_PH, int(output_ph * (output_ph / facade_ph)))
+        thumb_py = int((scroll_py / (facade_ph - output_ph)) * (output_ph - thumb_ph))
+        thumb_rect = pygame.Rect(track_px, thumb_py, _SCROLLBAR_PW, thumb_ph)
+        pygame.draw.rect(strip, "#181C2780", pygame.Rect(track_px, 0, _SCROLLBAR_PW, output_ph))
+        pygame.draw.rect(strip, "#30384E80", thumb_rect)
+        pygame.draw.rect(strip, "#60606080", thumb_rect, 1)
+
+        if is_blended:
+            output.blit(strip, (output.get_width() - _SCROLLBAR_PW, 0))
+
+    # ------------------------------------------------------------------------
+
+    def _present_output(self, tree: _MenuTree) -> pygame.Surface:
+        facade = tree.facade_surf
+        assert facade is not None
+        output_pw, output_ph = tree.size
+        facade_ph = facade.get_height()
+        max_scroll = max(0, facade_ph - output_ph)
+        tree.menu._scroll = min(max(tree.menu._scroll, 0.0), float(max_scroll))
+        scroll_py = int(round(tree.menu._scroll))
+        if tree.output_surf is not None and tree.output_scroll_py == scroll_py:
+            return tree.output_surf
+
+        source_rect = pygame.Rect(0, scroll_py, output_pw, output_ph).clip(facade.get_rect())
+        if tree.is_opaque and source_rect.size == (output_pw, output_ph):
+            # No per-pixel alpha, so the game's blit is a plain copy
+            output = facade.subsurface(source_rect).convert()
+        else:
+            # MAX against a zeroed surface copies the visible part exactly, where a
+            # normal alpha blit would darken semi-transparent pixels
+            output = pygame.Surface((output_pw, output_ph), pygame.SRCALPHA)
+            if source_rect.width > 0 and source_rect.height > 0:
+                output.blit(facade, (0, 0), source_rect, special_flags=pygame.BLEND_RGBA_MAX)
+        self._render_scrollbar(output, facade_ph, scroll_py)
+
+        tree.output_surf = output
+        tree.output_scroll_py = scroll_py
+        return output
+
+    # ------------------------------------------------------------------------
+
+    def find_elements_at(self, menu: Menu, pos: tuple[int, int]) -> list[Element]:
+        """Every element under window position ``pos``, deepest first, or none until ``menu`` has been rendered."""
+        tree = self._menu_tree
+        if tree is None or tree.menu is not menu or tree.facade_surf is None:
+            return []
+        return tree.find_at((pos[0], pos[1] + int(round(menu._scroll))))
+
+    def select_element_at(self, menu: Menu, pos: tuple[int, int]) -> Element | None:
+        """Select and return the deepest selectable element under ``pos``, if any."""
+        elements = self.find_elements_at(menu, pos)
+        if elements and elements[0].is_selectable:
+            menu.select_element_by_id(elements[0].id)
+            return elements[0]
+        return None
 
     @staticmethod
-    def _reset_text_decorations(font: pygame.font.Font) -> None:
-        """Clear all style flags so the cached font is left clean."""
-        font.set_bold(False)
-        font.set_italic(False)
-        font.set_underline(False)
-        font.set_strikethrough(False)
+    def _resolve_measure(value: tuple[float, float], measure: MeasureType, space: _MenuTree.Space) -> tuple[int, int]:
+        value_x, value_y = value
+        if measure == MeasureType.RELATIVE:
+            measure_x = math.floor(round(value_x * space.range_pw.stop, _PRECISION))
+            measure_y = math.floor(round(value_y * space.range_ph.stop, _PRECISION))
+            return measure_x, measure_y
+        return int(value_x), int(value_y)
 
     @staticmethod
-    def _resolve_measure(
-        value: Iterable[float | int],
-        measure: MeasureType,
-        available_pw: int,
-        available_ph: int,
-    ) -> tuple[int, int]:
-        """Resolve a Measure value to pixel coordinates."""
-        pixel_x, pixel_y = value
-
-        if measure == MeasureType.ABSOLUTE:
-            return int(pixel_x), int(pixel_y)
-        elif measure == MeasureType.RELATIVE:
-            return (
-                math.floor(round(pixel_x * available_pw, _PRECISION)),
-                math.floor(round(pixel_y * available_ph, _PRECISION)),
-            )
-
-        return int(pixel_x), int(pixel_y)
-
-    @staticmethod
-    def _apply_alpha(color: pygame.Color, alpha_factor: float) -> pygame.Color:
-        """ """
-        new_alpha = max(0, min(255, int(color.a * alpha_factor / 255)))
-        return pygame.Color(color.r, color.g, color.b, new_alpha)
+    def _align_box(alignment: AlignmentType, outer_pw: int, outer_ph: int, inner_pw: int, inner_ph: int) -> tuple[int, int]:
+        align_px, align_py = 0, 0
+        if alignment in (AlignmentType.MIDTOP, AlignmentType.CENTER, AlignmentType.MIDBOTTOM):
+            align_px = max(0, (outer_pw - inner_pw) // 2)
+        elif alignment in (AlignmentType.TOPRIGHT, AlignmentType.MIDRIGHT, AlignmentType.BOTTOMRIGHT):
+            align_px = max(0, outer_pw - inner_pw)
+        if alignment in (AlignmentType.MIDLEFT, AlignmentType.CENTER, AlignmentType.MIDRIGHT):
+            align_py = max(0, (outer_ph - inner_ph) // 2)
+        elif alignment in (AlignmentType.BOTTOMLEFT, AlignmentType.MIDBOTTOM, AlignmentType.BOTTOMRIGHT):
+            align_py = max(0, outer_ph - inner_ph)
+        return align_px, align_py
 
 
-_blank_surf_cache: pygame.Surface | None = None
+# ----------------------------------------------------------------------------
 
 
-def blank_surf(size=(0, 0), flags=0, convert=True):
-    global _blank_surf_cache
+# TODO: Consider moving these to their own space, out of this file
 
-    surf_pw, surf_ph = (max(0, int(size[0])), max(0, int(size[1])))
+def _color(rgba: RGBA, alpha: int = 0xFF) -> pygame.Color:
+    color = pygame.Color(rgba)
+    color.a = max(0, min(255, int(color.a * alpha / 255)))
+    return color
 
-    # Return cached empty surface
-    if surf_pw == 0 and surf_ph == 0:
-        if _blank_surf_cache is None:
-            # TODO: Add support for None to save for efficiency
-            _blank_surf_cache = pygame.Surface((0, 0), pygame.SRCALPHA).convert_alpha()
-        return _blank_surf_cache.copy()
 
-    surf = pygame.Surface((surf_pw, surf_ph), pygame.SRCALPHA | flags)
-
-    # Only convert if a display surface exists
-    if convert and pygame.display.get_surface():
+def _make_surf(pw: int, ph: int) -> pygame.Surface:
+    surf = pygame.Surface((max(0, pw), max(0, ph)), pygame.SRCALPHA)
+    if pygame.display.get_surface():
         surf = surf.convert_alpha()
-
     return surf

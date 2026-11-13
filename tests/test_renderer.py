@@ -20,8 +20,8 @@ def pixels(surface):
 def counting_recomposes(ui):
     """Wrap the renderer's compose step and return a list counting its calls."""
     calls = []
-    compose = ui.renderer._compose_menu_tree
-    ui.renderer._compose_menu_tree = lambda *args: calls.append(1) or compose(*args)
+    compose = ui.renderer._compose_tree
+    ui.renderer._compose_tree = lambda *args: calls.append(1) or compose(*args)
     return calls
 
 
