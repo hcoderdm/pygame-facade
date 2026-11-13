@@ -16,7 +16,7 @@ class FontManager:
     def __contains__(self, family: str) -> bool:
         return family.lower() in self._paths
 
-    """Font mutations."""
+    # -------------------------------------------------------------------------
 
     def add_dir(self, dirpath: str = "assets/fonts") -> None:
         root = Path(dirpath)
@@ -35,7 +35,7 @@ class FontManager:
         self._paths.clear()
         self._cache.clear()
 
-    """Font queries."""
+    # -------------------------------------------------------------------------
 
     def get_font(self, family: str | None = None, size: int = 16) -> pygame.font.Font:
         key = (family.lower() if family else None, size)
@@ -59,7 +59,7 @@ class ImageManager:
             self._placeholder = surf
         return self._placeholder
 
-    """Image mutations."""
+    # -------------------------------------------------------------------------
 
     def add_dir(self, dirpath: str = "images") -> None:
         root = Path(dirpath)

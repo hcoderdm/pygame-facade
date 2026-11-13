@@ -5,7 +5,7 @@ Interface: events in, GUI surface out.
 import pygame
 import pytest
 
-from facade import Button, Interface
+from facade import Button, Interface, Menu, Slider
 from sample_menus import Overlay, Title
 
 SIZE = (800, 600)
@@ -103,3 +103,30 @@ def test_pop_can_close_the_last_menu(ui):
 def test_push_unknown_type_raises(ui):
     with pytest.raises(KeyError):
         ui.push(Overlay)
+
+
+def test_slider_keys_open_step_and_commit(ui):
+    received = []
+    slider = Slider(step=0.25, action=lambda value: received.append(value) or True)
+    ui.push(Menu(root_elements=[slider]))
+    ui.render()
+
+    for k in (pygame.K_RETURN, pygame.K_RIGHT, pygame.K_RIGHT, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN):
+        assert ui.handle_event(key(k)) is True
+
+    assert received == [0.5]
+    assert not slider.is_open
+
+
+def test_escape_cancels_open_slider_without_closing_menu(ui):
+    slider = Slider(step=0.25)
+    ui.push(Title())
+    ui.push(Menu(root_elements=[slider]))
+    ui.render()
+
+    ui.handle_event(key(pygame.K_RETURN))
+    ui.handle_event(key(pygame.K_RIGHT))
+    ui.handle_event(key(pygame.K_ESCAPE))
+
+    assert slider.value == 0.0 and not slider.is_open
+    assert ui.top().root_elements == [slider]

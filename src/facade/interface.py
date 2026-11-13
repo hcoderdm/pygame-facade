@@ -67,9 +67,7 @@ class Interface:
             pygame.TEXTINPUT: lambda menu, event: handle_menu_textinput(menu, self.renderer, event),
         }
 
-    """
-    Assets.
-    """
+    # -------------------------------------------------------------------------
 
     @property
     def fonts(self) -> FontManager:
@@ -81,9 +79,7 @@ class Interface:
         """Image registry used for ``Image.image_path`` lookups."""
         return self.renderer.images
 
-    """
-    Menu stack.
-    """
+    # -------------------------------------------------------------------------
 
     def add_menu(self, menu: Menu) -> None:
         """Register ``menu`` so it can later be pushed by its type."""
@@ -118,9 +114,7 @@ class Interface:
         """Whether any menu is shown."""
         return self.manager.top_stack() is not None
 
-    """
-    Frame loop.
-    """
+    # -------------------------------------------------------------------------
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """

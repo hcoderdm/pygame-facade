@@ -16,6 +16,8 @@ from typing import Any, Callable
 
 from facade import (
     ALPHANUMERIC_REGEX,
+    COLOR_PALETTE_BORDER,
+    COLOR_PALETTE_NEUTRAL,
     FLOAT_REGEX,
     INT_REGEX,
     RGBA_REGEX,
@@ -29,11 +31,24 @@ from facade import (
     JustifyType,
     MeasureType,
     Menu,
+    NATIVE_FONT_SIZE,
     NormalText,
     Selector,
+    Slider,
     TextDecorationType,
     TitleText,
+    Toggle,
 )
+
+
+def _title_button(text: str, action: Callable) -> Button:
+    """A button drawn at twice the native font size, with its box scaled to match."""
+    return Button(
+        label=Button.ButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
+        action=action,
+        size=(296.0, 44.0),
+        padding=(12.0, 12.0),
+    )
 
 
 @dataclass(kw_only=True)
@@ -59,7 +74,7 @@ class Start(Menu):
                 elements=[
                     TitleText(
                         text="A",
-                        font_size=18 * 2,
+                        font_size=NATIVE_FONT_SIZE * 2,
                         text_color="#F0B443FF",
                         text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING,
                     ),
@@ -72,7 +87,7 @@ class Start(Menu):
                     ),
                     TitleText(
                         text="OF",
-                        font_size=18 * 2,
+                        font_size=NATIVE_FONT_SIZE * 2,
                         text_color="#F0B443FF",
                         text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING,
                     ),
@@ -85,14 +100,11 @@ class Start(Menu):
                 ],
             ),
             Gap(size=(0, 48)),
-            Button(
-                label=Button.ButtonText(text="Start Game"),
-                action=self.on_start,
-            ),
+            _title_button("Start Game", self.on_start),
             Gap(size=(0, 12)),
-            Button(label=Button.ButtonText(text="SETTINGS"), action=self.on_settings),
-            Button(label=Button.ButtonText(text="ABOUT"), action=self.on_about),
-            Button(label=Button.ButtonText(text="QUIT"), action=self.on_quit),
+            _title_button("SETTINGS", self.on_settings),
+            _title_button("ABOUT", self.on_about),
+            _title_button("QUIT", self.on_quit),
         ]
         super().__post_init__()
 
@@ -122,8 +134,9 @@ class Settings(Menu):
     """Settings menu - dynamically generates editors for each uppercase
     attribute of ``settings`` (a module, namespace or other object).
 
-    Edits are written straight back with ``setattr``. Enum and bool values
-    are edited with a Selector; int, float and str values with an InputField.
+    Edits are written straight back with ``setattr``. Enum values are edited
+    with a Selector, bool values with a Toggle, floats from 0 to 1 with a
+    Slider, and other int, float and str values with an InputField.
     """
 
     settings: Any  # Object whose UPPERCASE attributes are edited in place
@@ -162,14 +175,24 @@ class Settings(Menu):
                     return False
             return _apply
 
+        def _toggle_action(name: str) -> Callable[[Any], bool]:
+            def _apply(value: Any) -> bool:
+                setattr(config, name, bool(value))
+                return True
+            return _apply
+
         def _label(name: str) -> Element:
+            # Drawn like a read-only box, and wider than the inputs beside it
             return NormalText(
-                font_size=18,
-                padding=(4.0, 2.0),
-                background_color="#30384EFF",
-                border_color="#606060FF",
+                text=name.upper().replace("_", " "),
+                size=(136.0, 22.0),
+                padding=(6.0, 6.0),
+                alignment=AlignmentType.MIDLEFT,
+                background_color=COLOR_PALETTE_NEUTRAL,
+                border_color=COLOR_PALETTE_BORDER,
                 border_thickness=1,
-                text=name.upper().replace("_", " ") + ":",
+                shadow_color=COLOR_PALETTE_NEUTRAL,
+                shadow_alpha=0xB0,
             )
 
         def _build_editor(name: str, value: Any) -> Element:
@@ -183,15 +206,11 @@ class Settings(Menu):
                     action=_selector_action(name, members),
                 )
             if isinstance(value, bool):
-                options = (False, True)
-                return Selector(
-                    selections=("FALSE", "TRUE"),
-                    value=int(value),
-                    action=_selector_action(name, options),
-                )
+                return Toggle(value=value, action=_toggle_action(name))
+            if isinstance(value, float) and 0.0 <= value <= 1.0:
+                return Slider(value=value, step=0.1, action=_input_action(name, float))
             pattern, converter = _pick_validator(value)
             return InputField(
-                size=(96.0, 17.0),
                 value=InputField.InputValueText(text=str(value).upper()),
                 hint=InputField.InputHintText(text="[ESC]"),
                 validator=_authenticator(pattern),
@@ -201,7 +220,7 @@ class Settings(Menu):
         dynamic_components = [
             HorizontalDivision(
                 justify=JustifyType.START,
-                gap=(8.0, 0.0),
+                gap=(6.0, 0.0),
                 elements=[_label(name), _build_editor(name, value)],
             )
             for name, value in vars(config).items()

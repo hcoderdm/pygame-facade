@@ -24,11 +24,13 @@ RGBA = Annotated[str, f"regex:{RGBA_REGEX}"]
 Measure = Annotated[tuple[float, float], ""]
 Angle = Annotated[float, "radians", "range: [0, 2π]"]
 
-COLOR_PALETTE_BASE: RGBA = "#000000FF"
-COLOR_PALETTE_SECONDARY: RGBA = "#000000FF"
-COLOR_PALETTE_ACCENT: RGBA = "#4E4546FF"
-COLOR_PALETTE_NEUTRAL: RGBA = "#30384EFF"
-COLOR_PALETTE_TEXT: RGBA = "#000000FF"
+COLOR_PALETTE_BASE: RGBA = "#0C0E14FF"  # Menu background
+COLOR_PALETTE_SECONDARY: RGBA = "#181C27FF"  # Inside an input's box
+COLOR_PALETTE_ACCENT: RGBA = "#EC4662FF"  # The selected element
+COLOR_PALETTE_NEUTRAL: RGBA = "#30384EFF"  # Read-only boxes, unavailable parts and shadows
+COLOR_PALETTE_TEXT: RGBA = "#E0E0E0FF"
+COLOR_PALETTE_EDITED: RGBA = "#F0B443FF"  # A value that differs from the original
+COLOR_PALETTE_BORDER: RGBA = "#606060FF"  # Border of read-only boxes
 
 TRANSPARENT: RGBA = "#00000000"
 BLACK: RGBA = "#000000FF"
@@ -40,14 +42,19 @@ MAGENTA: RGBA = "#FF00FFFF"
 CYAN: RGBA = "#00FFFFFF"
 WHITE: RGBA = "#FFFFFFFF"
 
-NATIVE_FONT_SIZE: int = 18
+# The bundled pixel font draws one font pixel per screen pixel at 14px, and stays
+# crisp only at whole multiples of it; other sizes give uneven strokes
+NATIVE_FONT_SIZE: int = 14
+
+# Every input shares one box: 8px capitals with 6px of padding and a 1px border on each side
+_CONTROL_SIZE: Measure = (148.0, 22.0)
+_CONTROL_PADDING: Measure = (6.0, 6.0)
+_CONTROL_SHADOW_ALPHA: int = 0xB0
 
 _UNSET = object()  # Marks an attribute not yet assigned on an instance
 
 
-"""
-Attribute types.
-"""
+# -----------------------------------------------------------------------------
 
 
 class MeasureType(Enum):
@@ -209,9 +216,7 @@ class Element(ABC):
         object.__setattr__(self, name, value)
 
 
-"""
-Element modifiers.
-"""
+# -----------------------------------------------------------------------------
 
 
 @dataclass(kw_only=True, repr=False)
@@ -226,9 +231,7 @@ class SelectedModifier(Element):
     text_color: RGBA = COLOR_PALETTE_ACCENT
 
 
-"""
-Non-visual components.
-"""
+# -----------------------------------------------------------------------------
 
 
 @dataclass(kw_only=True, repr=False)
@@ -329,7 +332,7 @@ class Text(Element):
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
     font_name: str = "editundo.ttf"  # Font family filename for text rendering
-    font_size: int = 18  # Font size in pixels for text rendering
+    font_size: int = NATIVE_FONT_SIZE  # Font size in pixels for text rendering
 
     background_color: RGBA = TRANSPARENT
     is_selectable: bool = False  # Static labels are not selectable
@@ -339,12 +342,12 @@ class Text(Element):
 @dataclass(kw_only=True, repr=False)
 class NormalText(Text):
     """
-    Represents a text element with a default font size of 18 and a light
-    gray color (#E0E0E0FF). Inherits from Text.
+    Represents a text element at the native font size in the palette's text
+    colour. Inherits from Text.
     """
 
-    font_size: int = 18 * 1
-    text_color: RGBA = "#E0E0E0FF"
+    font_size: int = NATIVE_FONT_SIZE
+    text_color: RGBA = COLOR_PALETTE_TEXT
     # Plain weight: pygame's synthetic bold thickens the pixel font's strokes
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
@@ -357,7 +360,7 @@ class TitleText(Text):
     text_decorations.
     """
 
-    font_size: int = 18 * 4
+    font_size: int = NATIVE_FONT_SIZE * 5
     text_color: RGBA = WHITE
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
@@ -366,11 +369,11 @@ class TitleText(Text):
 class SubtitleText(Text):
     """
     Represents styled subtitle text with customizable font_size, text_color,
-    text_background, and text_decorations. Inherits from Text. Default font size
-    is 18, with black text on a white background and no text decoration.
+    text_background, and text_decorations. Inherits from Text. Defaults to the
+    native font size, with black text on a white background and no decoration.
     """
 
-    font_size: int = 18
+    font_size: int = NATIVE_FONT_SIZE
     text_color: RGBA = BLACK
     text_background: RGBA = WHITE
     text_decorations: TextDecorationType = TextDecorationType.NONE
@@ -384,11 +387,11 @@ class HeadingOneText(Text):
     """
 
     font_name: str = "editundo.ttf"
-    font_size: int = 18 * 3
+    font_size: int = NATIVE_FONT_SIZE * 4
 
     text_color: RGBA = "#F0B443FF"
     shadow_color: RGBA = "#E6A23EFF"
-    shadow_offset: Measure = (3.0, 3.0)
+    shadow_offset: Measure = (4.0, 4.0)  # One font pixel at this size
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
@@ -400,7 +403,7 @@ class HeadingTwoText(Text):
     """
 
     font_name: str = "editundo.ttf"
-    font_size: int = 18 * 2
+    font_size: int = NATIVE_FONT_SIZE * 2
 
     text_color: RGBA = "#F0B443FF"
     shadow_color: RGBA = "#E6A23EFF"
@@ -443,6 +446,60 @@ class Image(Element):
     is_selectable: bool = False  # Images are not selectable
 
 
+@dataclass(kw_only=True, repr=False)
+class ProgressBar(Element):
+    """
+    A read-only row of segments filled in proportion to ``value`` within
+    ``range``, with the number in its own box to the right. ``size`` covers
+    both boxes, and each is drawn with the element's padding, background,
+    border and shadow. It is drawn like a label so it reads as something to
+    look at, not something to adjust.
+    """
+
+    @dataclass(kw_only=True, repr=False)
+    class NumberText(NormalText):
+        """The number in the box beside the bar."""
+
+    value: float = 0.0  # Current value; values outside the range are clamped when drawn
+    range: tuple[float, float] = (0.0, 1.0)  # Values drawn as an empty and a full bar
+
+    segments: int = 10  # The segments share whatever width the bar box has
+    segment_gap_pw: int = 2
+    segment_ph: int = 8  # The height of a capital at the native font size
+    fill_color: RGBA = COLOR_PALETTE_TEXT
+    empty_color: RGBA = COLOR_PALETTE_SECONDARY
+
+    number_text: Text = field(default_factory=NumberText)
+    value_format: str = "{fraction:.0%}"  # str.format pattern given ``value`` and ``fraction``
+    number_pw: int = 40  # Fits "100%"
+    box_gap_pw: int = 6  # Between the bar box and the number box
+    use_number: bool = True
+
+    size: Measure = _CONTROL_SIZE
+    padding: Measure = _CONTROL_PADDING
+    alignment: AlignmentType = AlignmentType.CENTER
+    background_color: RGBA = COLOR_PALETTE_NEUTRAL
+    border_color: RGBA = COLOR_PALETTE_BORDER
+    border_thickness: int = 1
+    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_alpha: int = _CONTROL_SHADOW_ALPHA
+
+    is_selectable: bool = False
+
+    def get_fraction(self, value: float | None = None) -> float:
+        """How full the bar is for ``value``, or for the current value, from 0.0 to 1.0."""
+        value = self.value if value is None else value
+        low, high = self.range
+        if high == low:
+            return 0.0
+        return min(1.0, max(0.0, (value - low) / (high - low)))
+
+    def get_number(self, value: float | None = None) -> str:
+        """The text shown in the number box for ``value``, or for the current value."""
+        value = self.value if value is None else value
+        return self.value_format.format(value=value, fraction=self.get_fraction(value))
+
+
 """
 Interactive elements. User-controllable components that enable player
 input and decision-making within menus. These elements respond to keyboard
@@ -474,35 +531,28 @@ class InteractiveElement(Element):
 @dataclass(kw_only=True, repr=False)
 class Button(InteractiveElement):
     """
-    Represents a UI button element with customizable label text, appearance,
-    and an associated action callable. The button supports styling options
-    such as padding, background color, border, and shadow, and can be
-    activated by calling its instance.
+    A fixed-size box with a centred label that runs ``action`` when pressed.
+    The border and label turn the accent colour while it is selected.
     """
 
     @dataclass(kw_only=True, repr=False)
     class ButtonText(NormalText):
-        """
-        Represents styled text for a button, extending NormalText with a larger
-        font size, light text color, and horizontal padding. Suitable for button
-        labels in a UI.
-        """
-
-        font_size: int = int(18 * 1.5)
-        text_color: RGBA = "#F0F0F0FF"
+        """The label of a button."""
 
     label: Text = field(default_factory=ButtonText)  # Text element used for rendering the button label
     action: Callable[[], Any] = field(default=lambda: None)  # Called with no arguments when the button is pressed
 
-    padding: Measure = (10.0, 2.0)
-    background_color: RGBA = "#30384EFF"
-    border_color: RGBA = "#606060FF"
+    size: Measure = _CONTROL_SIZE
+    padding: Measure = _CONTROL_PADDING
+    alignment: AlignmentType = AlignmentType.CENTER
+    background_color: RGBA = COLOR_PALETTE_SECONDARY
+    border_color: RGBA = COLOR_PALETTE_TEXT
     border_thickness: int = 1
-    shadow_color: RGBA = "#30384eFF"
-    shadow_alpha: int = 0xB0
-    shadow_scale: float = 1.0
+    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    selected_text_color: RGBA = "#EC4662FF"
+    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
+    selected_text_color: RGBA = COLOR_PALETTE_ACCENT
 
     def __call__(self) -> Any:
         """Run the button's action. Buttons have no value, so no argument is passed."""
@@ -512,36 +562,38 @@ class Button(InteractiveElement):
 
 @dataclass(kw_only=True, repr=False)
 class Toggle(InteractiveElement):
-    """An on/off boolean switch."""
+    """
+    An on/off switch drawn as two halves, ``false_text`` and ``true_text``,
+    with the current one filled. The fill turns the edited colour once the
+    toggle has been used.
+    """
 
     @dataclass(kw_only=True, repr=False)
     class ToggleText(NormalText):
-        """"""
+        """The style of both halves' text; the filled half recolours it."""
 
-        text: str = "FALSE"
-        font_size: int = 18
-        text_color: RGBA = "#E0E0E0FF"  # "#30384eFF"
-        alignment: AlignmentType = AlignmentType.CENTER
+        text_color: RGBA = COLOR_PALETTE_NEUTRAL
 
     value: bool = False  # Current boolean state
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
     label: Toggle.ToggleText = field(default_factory=ToggleText)
+    false_text: str = "FALSE"
+    true_text: str = "TRUE"
 
+    size: Measure = _CONTROL_SIZE
+    padding: Measure = (3.0, 3.0)  # Gap around the filled half, the same on every side
     alignment: AlignmentType = AlignmentType.CENTER
-
-    size: Measure = (64.0, 0.0)  # 40.0 is double the toggle (17.0)
-    padding: Measure = (8.0, 2.0)
-    background_color: RGBA = "#181C27FF"
-    border_color: RGBA = "#E0E0E0FF"
+    background_color: RGBA = COLOR_PALETTE_SECONDARY
+    border_color: RGBA = COLOR_PALETTE_TEXT
     border_thickness: int = 1
-    shadow_color: RGBA = "#30384eFF"
-    shadow_alpha: int = 0xB0
-    shadow_scale: float = 1.0
+    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    selected_border_color: RGBA = "#EC4662FF"
-    edited_text_color: RGBA = "#F0B443FF"
-    toggled_text: str = "TRUE"
+    fill_color: RGBA = COLOR_PALETTE_TEXT
+    edited_fill_color: RGBA = COLOR_PALETTE_EDITED
+    filled_text_color: RGBA = COLOR_PALETTE_SECONDARY
+    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
 
     def __call__(self) -> bool:
         """Inverse value and call action with value."""
@@ -552,53 +604,113 @@ class Toggle(InteractiveElement):
 
 
 @dataclass(kw_only=True, repr=False)
-class Slider(InteractiveElement):
-    """A numeric range adjusted with left/right."""
+class Slider(InteractiveElement, ProgressBar):
+    """
+    A ``ProgressBar`` adjusted in steps, with arrows either side of the
+    segments. Opening it copies ``value`` to a buffer that the steps change,
+    and closing it commits the buffer and calls ``action`` once, like
+    ``Selector``. Only the bar box shows the selection; the number box keeps
+    its border.
+    """
 
-    value: float = 0.0  # Current numeric value within the range
+    value: float = 0.0  # Current committed value within the range
     range: tuple[float, float] = (0, 1)  # Minimum and maximum allowed values
     step: float = 0.1  # Increment/decrement amount per adjustment
 
+    left_arrow: Text = field(default_factory=lambda: Selector.LeftShiftArrow())
+    right_arrow: Text = field(default_factory=lambda: Selector.RightShiftArrow())
+    gap: Measure = (5.0, 0.0)  # Between each arrow and the segments
+
+    action: Callable[[Any], bool] = field(default=lambda v: True)
+
+    empty_color: RGBA = COLOR_PALETTE_NEUTRAL
+
+    # InteractiveElement restores Element's defaults over ProgressBar's, so the box is declared again
+    size: Measure = _CONTROL_SIZE
+    padding: Measure = _CONTROL_PADDING
+    alignment: AlignmentType = AlignmentType.CENTER
+    background_color: RGBA = COLOR_PALETTE_SECONDARY
+    border_color: RGBA = COLOR_PALETTE_TEXT
+    border_thickness: int = 1
+    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_alpha: int = _CONTROL_SHADOW_ALPHA
+
+    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
+    selected_arrow_color: RGBA = COLOR_PALETTE_ACCENT
+    disabled_arrow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    altered_color: RGBA = COLOR_PALETTE_EDITED  # Segments and number while the value differs from the original
+
+    is_selectable: bool = True
     is_edited: bool = field(default=False, init=False, repr=False)
     is_open: bool = field(default=False, init=False, repr=False)
+    _open_value: float = field(default=0.0, init=False, repr=False)
+
+    def get_buffer_value(self) -> float:
+        """The buffer while open, or the committed value otherwise."""
+        return self._open_value if self.is_open else self.value
+
+    def is_altered(self) -> bool:
+        """"""
+        if self.is_open and not self.is_edited:
+            return self._open_value != self.value
+        else:
+            return self.is_edited
+
+    def open(self) -> None:
+        """Enter edit mode, copying the current value to the buffer."""
+        self.is_open = True
+        self._open_value = self.value
 
     def increment(self) -> None:
-        """Increase the slider value by one step, clamping to the maximum range."""
-        self.value = min(self.range[1], round(self.value + self.step, 10))
-        self.action(self.value)
+        """Raise the buffer by one step, clamped to the maximum, if open."""
+        if self.is_open:
+            self._open_value = min(self.range[1], round(self._open_value + self.step, 10))
 
     def decrement(self) -> None:
-        """Decrease the slider value by one step, clamping to the minimum range."""
-        self.value = max(self.range[0], round(self.value - self.step, 10))
-        self.action(self.value)
+        """Lower the buffer by one step, clamped to the minimum, if open."""
+        if self.is_open:
+            self._open_value = max(self.range[0], round(self._open_value - self.step, 10))
+
+    def cancel(self) -> None:
+        """Discard the buffer and exit edit mode without saving."""
+        self.is_open = False
+        self._open_value = self.value
+
+    def close(self) -> None:
+        """Commit the buffer as the new value and exit edit mode."""
+        if self.is_open:
+            if self._open_value != self.value:
+                self.is_edited = True
+                self.value = self._open_value
+                self.is_called = True
+                self.action(self.value)  # Call action once, with the new value
+            self.is_open = False
 
 
 @dataclass(kw_only=True, repr=False)
 class Selector(InteractiveElement):
+    """
+    One of ``selections``, stepped through with arrows pinned to the edges of
+    a fixed-size box, with the option centred between them.
+    """
 
     @dataclass(kw_only=True, repr=False)
     class LeftShiftArrow(NormalText):
         """"""
 
         text: str = "<"
-        font_size: int = int(18 * 0.75)
-        text_color: RGBA = "#F0F0F0FF"
 
     @dataclass(kw_only=True, repr=False)
     class RightShiftArrow(NormalText):
         """"""
 
         text: str = ">"
-        font_size: int = int(18 * 0.75)
-        text_color: RGBA = "#F0F0F0FF"
 
     @dataclass(kw_only=True, repr=False)
     class SelectionText(NormalText):
         """"""
 
         text: str = "[SELECTION]"
-        font_size: int = 18
-        text_color: RGBA = "#F0F0F0FF"
 
     value: int = 0
     selections: tuple[str, ...] = ("",)
@@ -606,21 +718,23 @@ class Selector(InteractiveElement):
     selection_text: SelectionText = field(default_factory=SelectionText)
     left_arrow: LeftShiftArrow = field(default_factory=LeftShiftArrow)
     right_arrow: RightShiftArrow = field(default_factory=RightShiftArrow)
+    gap: Measure = (5.0, 0.0)  # Between each arrow and the option's slot
 
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
-    size: Measure = (0.0, 0.0)
-    padding: Measure = (4.0, 2.0)
-    background_color: RGBA = "#181C27FF"
-    border_color: RGBA = "#E0E0E0FF"
+    size: Measure = _CONTROL_SIZE
+    padding: Measure = _CONTROL_PADDING
+    alignment: AlignmentType = AlignmentType.CENTER
+    background_color: RGBA = COLOR_PALETTE_SECONDARY
+    border_color: RGBA = COLOR_PALETTE_TEXT
     border_thickness: int = 1
-    shadow_color: RGBA = "#30384eFF"
-    shadow_alpha: int = 0xB0
-    shadow_scale: float = 1.0
+    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    selected_border_color: RGBA = "#EC4662FF"
-    altered_selection_color: RGBA = "#F0B443FF"
-    disabled_arrow_color: RGBA = "#30384EFF"
+    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
+    selected_arrow_color: RGBA = COLOR_PALETTE_ACCENT
+    altered_selection_color: RGBA = COLOR_PALETTE_EDITED
+    disabled_arrow_color: RGBA = COLOR_PALETTE_NEUTRAL
 
     is_open: bool = field(default=False, init=False, repr=False)
     is_edited: bool = field(default=False, init=False, repr=False)
@@ -676,50 +790,49 @@ class Selector(InteractiveElement):
 
 @dataclass(kw_only=True, repr=False)
 class InputField(InteractiveElement):
+    """
+    Text typed after a terminal-style prompt, edited in a buffer that is
+    committed on close when ``validator`` accepts it. Only the border shows
+    the selection; the prompt stays the neutral colour.
+    """
+
+    @dataclass(kw_only=True, repr=False)
+    class InputPromptText(NormalText):
+        """The prompt drawn before the value."""
+
+        text: str = ">"
+        text_color: RGBA = COLOR_PALETTE_NEUTRAL
 
     @dataclass(kw_only=True, repr=False)
     class InputHintText(NormalText):
-        """
-        Represents a styled hint text for input fields, with customizable text,
-        font_size, text_color, and text_decorations. Inherits from NormalText
-        and defaults to displaying "[RETURN]" in italic with antialiasing.
-        """
+        """Shown after the prompt while the field is empty."""
 
         text: str = "[RETURN]"
-        font_size: int = 18
-        text_color: RGBA = "#30384EFF"
-        text_decorations: TextDecorationType = TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING
+        text_color: RGBA = COLOR_PALETTE_NEUTRAL
 
     @dataclass(kw_only=True, repr=False)
     class InputValueText(NormalText):
-        """
-        Represents a styled text input value with a customizable font_size and
-        text_color, inheriting from NormalText. Designed for use where input
-        text appearance needs to be specified.
-        """
+        """The committed value, or the buffer while editing."""
 
-        font_size: int = 18
-        text_color: RGBA = "#F0F0F0FF"
-
-    label: Text = field(default_factory=InputHintText)  # Current committed text value
-    hint: Text = field(default_factory=InputHintText)  # Current committed text value
+    prompt: Text = field(default_factory=InputPromptText)
+    hint: Text = field(default_factory=InputHintText)
     value: Text = field(default_factory=InputValueText)  # Current committed text value
     action: Callable[[Any], bool] = field(default=lambda v: True)  # Function called with new value when committed
     validator: Callable[[str], bool] = field(default=lambda s: bool(re.fullmatch(ALPHANUMERIC_REGEX, s)))
+    gap: Measure = (6.0, 0.0)  # Between the prompt and the value
 
-    size: Measure = (64.0, 0.0)
-    padding: Measure = (4.0, 2.0)
-    background_color: RGBA = "#181C27FF"
-    border_color: RGBA = "#E0E0E0FF"
+    size: Measure = _CONTROL_SIZE
+    padding: Measure = _CONTROL_PADDING
+    alignment: AlignmentType = AlignmentType.MIDLEFT
+    background_color: RGBA = COLOR_PALETTE_SECONDARY
+    border_color: RGBA = COLOR_PALETTE_TEXT
     border_thickness: int = 1
-    shadow_color: RGBA = "#30384eFF"
-    shadow_alpha: int = 0xB0
-    shadow_scale: float = 1.0
+    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    selected_border_color: RGBA = "#EC4662FF"
-    invalid_text_color: RGBA = "#EC4662FF"
-    edited_text_color: RGBA = "#F0B443FF"
-    open_cursor_color: RGBA = "#EC4662FF"
+    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
+    invalid_text_color: RGBA = COLOR_PALETTE_ACCENT
+    edited_text_color: RGBA = COLOR_PALETTE_EDITED
 
     is_edited: bool = field(default=False, init=False, repr=False)
     is_open: bool = field(default=False, init=False, repr=False)
@@ -745,7 +858,6 @@ class InputField(InteractiveElement):
         return self._cursor_glyphs[int(elapsed / self._cursor_period) % len(self._cursor_glyphs)]
 
     def _restart_cursor(self) -> None:
-        """Show the cursor immediately, e.g. after a keystroke."""
         self._cursor_epoch = time.monotonic()
 
     def is_altered(self) -> bool:

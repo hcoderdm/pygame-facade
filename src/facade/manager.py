@@ -28,9 +28,7 @@ class MenuManager:
         self._menus: dict[type[Menu], Menu] = {}
         self._stack: list[Menu] = []
 
-    """
-    Menu mutations.
-    """
+    # -------------------------------------------------------------------------
 
     def add_menu(self, menu: Menu) -> None:
         """"""
@@ -44,9 +42,7 @@ class MenuManager:
         """"""
         self._menus.clear()
 
-    """
-    Menu queries.
-    """
+    # -------------------------------------------------------------------------
 
     def get_menu[T: Menu](self, menu_type: type[T]) -> T | None:
         """"""
@@ -60,9 +56,7 @@ class MenuManager:
         """"""
         return iter(self._menus.values())
 
-    """
-    Stack mutations.
-    """
+    # -------------------------------------------------------------------------
 
     def push_stack(self, menu_type: type[Menu]) -> None:
         """Push a menu onto the stack by its type."""
@@ -85,9 +79,7 @@ class MenuManager:
         """Remove all menus from the stack."""
         self._stack.clear()
 
-    """
-    Stack queries.
-    """
+    # -------------------------------------------------------------------------
 
     def top_stack(self) -> Menu | None:
         """Returns the first (top) item in the stack"""
@@ -108,13 +100,11 @@ class MenuManager:
         return iter(self._stack)
 
 
-"""
-Manage input events.
-"""
+# -----------------------------------------------------------------------------
 
 
 def _set_system_cursor(cursor: int) -> None:
-    """Change the system cursor; a platform without system cursors is not an error."""
+    # A platform without system cursors is not an error
     try:
         pygame.mouse.set_cursor(cursor)
     except pygame.error:
@@ -167,7 +157,7 @@ def handle_menu_mousebuttondown(menu: Menu, renderer: MenuRenderer | DebugRender
                 element.open()
             else:
                 element.close()
-        elif isinstance(element, Selector):
+        elif isinstance(element, (Selector, Slider)):
             if not element.is_open:
                 element.open()
             else:
@@ -207,6 +197,8 @@ def handle_menu_mousewheel(menu: Menu, renderer: MenuRenderer | DebugRenderer, e
         return True
 
     if isinstance(element, Slider):
+        if not element.is_open:
+            element.open()
         if precise_y > 0:
             element.increment()
         elif precise_y < 0:
@@ -268,7 +260,22 @@ def handle_menu_keydown(menu: Menu, renderer: MenuRenderer | DebugRenderer, even
                 return True
 
     elif isinstance(element, Slider):
-        pass
+        if key == pygame.K_RETURN and not element.is_open:
+            element.open()
+            return True
+        if element.is_open:
+            if key == pygame.K_RETURN:
+                element.close()
+                return True
+            if key == pygame.K_ESCAPE:
+                element.cancel()
+                return True
+            if key == pygame.K_RIGHT:
+                element.increment()
+                return True
+            if key == pygame.K_LEFT:
+                element.decrement()
+                return True
 
     elif isinstance(element, Toggle):
         if key == pygame.K_RETURN:

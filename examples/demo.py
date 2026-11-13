@@ -18,16 +18,6 @@ from facade import DebugRenderer, Interface, MenuRenderer
 from menus import About, Pause, Settings, Start  # examples/menus.py, this game's screens
 
 
-def draw_fps(screen: pygame.Surface, font: pygame.font.Font, fps: float) -> None:
-    """Draw an FPS readout in a black box at the top right of the window."""
-    padding = 8
-    text = font.render(f"{fps:.0f} FPS", True, (240, 240, 240))
-    box = pygame.Rect(0, 0, text.get_width() + 2 * padding, text.get_height() + 2 * padding)
-    box.topright = (screen.get_width() - padding, padding)
-    pygame.draw.rect(screen, (0, 0, 0), box)
-    screen.blit(text, (box.left + padding, box.top + padding))
-
-
 def main() -> None:
     pygame.init()
     screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
@@ -44,7 +34,6 @@ def main() -> None:
     interface.renderer = debug
     # Register the bundled pixel font; Text elements default to "editundo.ttf".
     interface.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
-    fps_font = pygame.font.Font(None, 16)
 
     debug_keybinds = {
         pygame.K_F3: debug.toggle_stats_overlay,
@@ -105,7 +94,6 @@ def main() -> None:
         pygame.draw.circle(screen, (230, 190, 60), ball, 20)
         if (gui := interface.render()) is not None:
             screen.blit(gui, (0, 0))
-            draw_fps(screen, fps_font, clock.get_fps())
         pygame.display.flip()
 
     pygame.quit()

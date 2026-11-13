@@ -3,14 +3,16 @@ Renderer output format and caching.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 import time
 
 import pygame
 
-from facade import AlignmentType, Button, DebugRenderer, Element, InputField, Interface, Menu, NormalText
+from facade import AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, NormalText, ProgressBar, Slider, Toggle
 from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
+FONTS = Path(__file__).resolve().parents[1] / "examples" / "assets" / "fonts"
 
 
 def pixels(surface):
@@ -168,6 +170,113 @@ def test_offset_moves_the_box():
 
     assert (moved.x, moved.y, moved.size) == (plain.x + 10, plain.y + 5, plain.size)
 
+
+def runs_of(surface, py, px_range, colors):
+    """Lengths of consecutive runs of each colour along row ``py``, as (colour, length) pairs."""
+    runs = []
+    for px in px_range:
+        color = surface.get_at((px, py))
+        key = next((name for name, value in colors.items() if color == pygame.Color(value)), None)
+        if runs and runs[-1][0] == key:
+            runs[-1][1] += 1
+        else:
+            runs.append([key, 1])
+    return [(key, length) for key, length in runs if key is not None]
+
+
+def test_progress_bar_fills_its_fraction_of_the_segments():
+    bar = ProgressBar(value=0.5, use_number=False, fill_color="#FF0000FF", empty_color="#0000FFFF", is_selectable=True)
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[bar]))
+    surface = ui.render()
+    track = hit_rect_of(ui, bar)
+
+    runs = runs_of(surface, track.centery, range(track.left, track.right), {"fill": "#FF0000FF", "empty": "#0000FFFF"})
+
+    assert [key for key, _ in runs] == ["fill"] * 5 + ["empty"] * 5
+    assert len({length for _, length in runs}) == 1  # Every segment the same width
+
+
+def test_text_is_centred_on_its_ink():
+    # The pixel font has blank rows above its capitals and spacing after each glyph, which layout must ignore
+    button = Button(label=Button.ButtonText(text="START", text_color="#FF0000FF"))
+    ui = Interface(size=SIZE)
+    ui.fonts.add_dir(str(FONTS))
+    ui.push(Panel(root_elements=[Gap(is_selectable=True), button]))  # The gap holds the selection, so the label keeps its colour
+    surface = ui.render()
+    box = hit_rect_of(ui, button).inflate(-2, -2)  # Inside the border
+
+    ink = [(px, py) for px in range(box.left, box.right) for py in range(box.top, box.bottom) if surface.get_at((px, py)) == pygame.Color("#FF0000FF")]
+    ink_xs, ink_ys = [px for px, _ in ink], [py for _, py in ink]
+
+    assert min(ink_ys) - box.top == box.bottom - 1 - max(ink_ys)
+    assert min(ink_xs) - box.left == box.right - 1 - max(ink_xs)
+
+
+def test_selected_slider_outlines_only_its_bar():
+    slider = Slider()
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[slider]))
+    surface = ui.render()
+    rect = hit_rect_of(ui, slider)
+
+    assert surface.get_at((rect.left, rect.centery)) == pygame.Color(slider.selected_border_color)
+    assert surface.get_at((rect.right - 1, rect.centery)) == pygame.Color(slider.border_color)
+
+
+def test_clicks_on_a_bar_reach_the_slider():
+    slider = Slider()
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[slider]))
+    ui.render()
+    rect = hit_rect_of(ui, slider)
+
+    assert ui.renderer.find_elements_at(ui.top(), rect.center)[0] is slider
+
+
+def test_toggle_fills_the_half_for_its_value():
+    toggle = Toggle(value=True)
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[Gap(is_selectable=True), toggle]))  # The gap holds the selection
+    surface = ui.render()
+    rect = hit_rect_of(ui, toggle)
+    inset = 1 + int(toggle.padding[0])
+
+    assert surface.get_at((rect.right - 1 - inset, rect.centery)) == pygame.Color(toggle.fill_color)
+    assert surface.get_at((rect.left + inset, rect.centery)) == pygame.Color(toggle.background_color)
+
+
+def test_changing_progress_bar_value_redraws():
+    bar = ProgressBar(value=0.25)
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[bar]))
+    first = ui.render()
+
+    bar.value = 0.75
+
+    assert ui.render() is not first
+
+
+def test_rendering_a_slider_is_not_an_edit():
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[Slider()]))
+    version = Element._render_version
+
+    ui.render()
+
+    assert Element._render_version == version
+
+
+def test_stepping_an_open_slider_redraws():
+    slider = Slider()
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[slider]))
+    slider.open()
+    first = ui.render()
+
+    slider.increment()
+
+    assert ui.render() is not first
 
 
 def debugging(ui, **modes):

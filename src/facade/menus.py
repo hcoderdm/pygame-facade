@@ -113,12 +113,10 @@ class Menu(ABC):
 
         self._d2scroll = 0.0
 
-    """Selection helpers."""
+    # -------------------------------------------------------------------------
 
     @property
     def _selectable_elements(self) -> list[Element]:
-        """Flat list of nested elements that can receive selection focus."""
-
         def walk(elements):
             for e in elements:
                 if e.is_selectable:
