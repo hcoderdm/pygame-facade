@@ -67,9 +67,7 @@ def test_settings_writes_edits_back():
     name_field.open()
     name_field.append("2")
     name_field.close()
-    difficulty.open()
     difficulty.next()
-    difficulty.close()
 
     assert settings.NAME == "PLAYER2"
     assert settings.DIFFICULTY is Difficulty.HARD
@@ -79,8 +77,6 @@ def test_settings_slider_writes_edits_back():
     settings = SimpleNamespace(VOLUME=0.5)
     (volume,) = [e for e in Settings(settings=settings)._selectable_elements if not isinstance(e, Button)]
 
-    volume.open()
     volume.increment()
-    volume.close()
 
     assert settings.VOLUME == 0.6

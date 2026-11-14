@@ -62,6 +62,14 @@ class Menu(ABC):
     _div: VerticalDivision = field(init=False, repr=False, compare=False)
     _selected_index: int = field(init=False, repr=False, compare=False, default=0)
 
+    # The keys keep their place in ``_selected_index`` and the pointer has its own hover. Whichever was
+    # used last is lit, so moving the mouse never loses the keyboard's place
+    _is_pointer_leading: bool = field(init=False, repr=False, compare=False, default=False)
+    _hovered_id: str | None = field(init=False, repr=False, compare=False, default=None)
+    _pointer_part: str | None = field(init=False, repr=False, compare=False, default=None)
+    _pressed: tuple[str, str] | None = field(init=False, repr=False, compare=False, default=None)  # Element id and part held down
+    _key_anchor_pos: tuple[int, int] | None = field(init=False, repr=False, compare=False, default=None)  # Pointer position at the last key press
+
     def __post_init__(self):
         self._div = VerticalDivision(
             elements=self.root_elements,
@@ -166,3 +174,49 @@ class Menu(ABC):
         if new_idx != self._selected_index:
             self._selected_index = new_idx
             Element._render_version += 1
+
+    def move_selected_by(self, offset: int, is_wrapping: bool = True) -> None:
+        """Move the selection ``offset`` places in reading order, wrapping past the ends when ``is_wrapping``."""
+        items = self._selectable_elements
+        if not items:
+            return
+        idx = self._selected_index % len(items) + offset
+        new_idx = idx % len(items) if is_wrapping else max(0, min(idx, len(items) - 1))
+        if new_idx != self._selected_index:
+            self._selected_index = new_idx
+            Element._render_version += 1
+
+    # -------------------------------------------------------------------------
+
+    def get_lit_id(self) -> str | None:
+        """The element drawn with the focused look: the hovered one while the pointer leads, otherwise the selection."""
+        return self._hovered_id if self._is_pointer_leading else self.get_selection_id()
+
+    def set_pointer_leading(self, is_leading: bool) -> None:
+        """Hand the lit look to the pointer's hover, or back to the keys' selection."""
+        if is_leading != self._is_pointer_leading:
+            self._is_pointer_leading = is_leading
+            Element._render_version += 1
+
+    def get_pointer_part(self) -> str | None:
+        """The part of the hovered element under the pointer, ``""`` for none, or ``None`` while the keys lead."""
+        return self._pointer_part if self._is_pointer_leading else None
+
+    def set_hovered(self, element: Element | None, part: str = "") -> None:
+        """Record the element under the pointer and the part of it there, or that the pointer is over nothing."""
+        hovered_id = element.id if element is not None else None
+        part_or_none = part if element is not None else None
+        if (hovered_id, part_or_none) != (self._hovered_id, self._pointer_part):
+            self._hovered_id, self._pointer_part = hovered_id, part_or_none
+            Element._render_version += 1
+
+    def get_pressed_part(self, element: Element) -> str | None:
+        """The part of ``element`` held down by the pointer, or ``None``."""
+        if self._pressed is not None and self._pressed[0] == element.id:
+            return self._pressed[1]
+        return None
+
+    def set_pressed_part(self, element: Element | None, part: str = "") -> None:
+        """Hold ``part`` of ``element`` down, or release whatever is held when ``element`` is ``None``."""
+        # Holding looks the same as pointing, so nothing is redrawn
+        self._pressed = (element.id, part) if element is not None else None

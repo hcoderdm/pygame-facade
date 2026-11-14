@@ -20,6 +20,16 @@ def test_selection_moves_between_selectable_elements_and_stops_at_ends():
     assert labels() == "QUIT"
 
 
+def test_move_selected_by_wraps_in_reading_order():
+    menu = Title()
+    labels = lambda: menu.get_selected_element().label.text
+
+    menu.move_selected_by(-1)
+    assert labels() == "QUIT"
+    menu.move_selected_by(1)
+    assert labels() == "START"
+
+
 def test_manager_stack_keeps_root_unless_asked():
     manager = MenuManager()
     manager.add_menu(Title())

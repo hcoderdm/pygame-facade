@@ -52,6 +52,8 @@ NATIVE_FONT_SIZE: int = 14
 _CONTROL_SIZE: Measure = (148.0, 22.0)
 _CONTROL_PADDING: Measure = (6.0, 6.0)
 _CONTROL_SHADOW_ALPHA: int = 0xB0
+# Boxes split into parts keep 3px between the border and each part, like the toggle's filled half
+_PART_PADDING: Measure = (3.0, 3.0)
 
 _UNSET = object()  # Marks an attribute not yet assigned on an instance
 
@@ -640,7 +642,8 @@ class InteractiveElement(Element):
 class Button(InteractiveElement):
     """
     A fixed-size box with a centred label that runs ``action`` when pressed.
-    The border and label turn the accent colour while it is selected.
+    The border and label turn the accent colour while it is focused or under
+    the pointer.
     """
 
     @dataclass(kw_only=True, repr=False)
@@ -673,14 +676,15 @@ class Toggle(InteractiveElement):
     """
     An on/off switch drawn as two halves, ``false_text`` and ``true_text``,
     with the current one filled. The fill turns the edited colour once the
-    toggle has been used.
+    toggle has been used. While it is focused or under the pointer, the
+    option it would switch to turns the accent colour.
     """
 
     @dataclass(kw_only=True, repr=False)
     class ToggleText(NormalText):
         """The style of both halves' text; the filled half recolours it."""
 
-        text_color: RGBA = COLOR_PALETTE_NEUTRAL
+        text_color: RGBA = COLOR_PALETTE_MUTED
 
     value: bool = False  # Current boolean state
     action: Callable[[Any], bool] = field(default=lambda v: True)
@@ -690,7 +694,7 @@ class Toggle(InteractiveElement):
     true_text: str = "TRUE"
 
     size: Measure = _CONTROL_SIZE
-    padding: Measure = (3.0, 3.0)  # Gap around the filled half, the same on every side
+    padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
     background_color: RGBA = COLOR_PALETTE_SECONDARY
     border_color: RGBA = COLOR_PALETTE_TEXT
@@ -702,32 +706,36 @@ class Toggle(InteractiveElement):
     edited_fill_color: RGBA = COLOR_PALETTE_EDITED
     filled_text_color: RGBA = COLOR_PALETTE_SECONDARY
     selected_border_color: RGBA = COLOR_PALETTE_ACCENT
+    selected_text_color: RGBA = COLOR_PALETTE_ACCENT  # The option it would switch to, while focused
 
     def __call__(self) -> bool:
-        """Inverse value and call action with value."""
-
+        """Flip the value and call ``action`` with it."""
         self.value = not self.value
         self.is_called = True
         return self.action(self.value)
+
+    def set_value(self, value: bool) -> bool:
+        """Switch to ``value``, calling ``action`` only if that changes anything."""
+        if value == self.value:
+            return False
+        return self()
 
 
 @dataclass(kw_only=True, repr=False)
 class Slider(InteractiveElement, ProgressBar):
     """
     A ``ProgressBar`` adjusted in steps, with arrows either side of the
-    segments. Opening it copies ``value`` to a buffer that the steps change,
-    and closing it commits the buffer and calls ``action`` once, like
-    ``Selector``. Only the bar box shows the selection; the number box keeps
-    its border.
+    segments. Every step is saved at once and calls ``action``. Only the bar
+    box shows focus; the number box keeps its border.
     """
 
-    value: float = 0.0  # Current committed value within the range
+    value: float = 0.0  # Current value within the range
     range: tuple[float, float] = (0, 1)  # Minimum and maximum allowed values
     step: float = 0.1  # Increment/decrement amount per adjustment
 
     left_arrow: Text = field(default_factory=lambda: Selector.LeftShiftArrow())
     right_arrow: Text = field(default_factory=lambda: Selector.RightShiftArrow())
-    gap: Measure = (5.0, 0.0)  # Between each arrow and the segments
+    gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the segments
 
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
@@ -735,7 +743,7 @@ class Slider(InteractiveElement, ProgressBar):
 
     # InteractiveElement restores Element's defaults over ProgressBar's, so the box is declared again
     size: Measure = _CONTROL_SIZE
-    padding: Measure = _CONTROL_PADDING
+    padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
     background_color: RGBA = COLOR_PALETTE_SECONDARY
     border_color: RGBA = COLOR_PALETTE_TEXT
@@ -746,60 +754,35 @@ class Slider(InteractiveElement, ProgressBar):
     selected_border_color: RGBA = COLOR_PALETTE_ACCENT
     selected_arrow_color: RGBA = COLOR_PALETTE_ACCENT
     disabled_arrow_color: RGBA = COLOR_PALETTE_NEUTRAL
-    altered_color: RGBA = COLOR_PALETTE_EDITED  # Segments and number while the value differs from the original
+    altered_color: RGBA = COLOR_PALETTE_EDITED  # Segments and number once the value has been changed
 
     is_selectable: bool = True
     is_edited: bool = field(default=False, init=False, repr=False)
-    is_open: bool = field(default=False, init=False, repr=False)
-    _open_value: float = field(default=0.0, init=False, repr=False)
 
-    def get_buffer_value(self) -> float:
-        """The buffer while open, or the committed value otherwise."""
-        return self._open_value if self.is_open else self.value
+    def increment(self) -> bool:
+        """Raise the value by one step, clamped to the maximum. Returns whether it changed."""
+        return self._set_value(min(self.range[1], round(self.value + self.step, 10)))
 
-    def is_altered(self) -> bool:
-        """"""
-        if self.is_open and not self.is_edited:
-            return self._open_value != self.value
-        else:
-            return self.is_edited
+    def decrement(self) -> bool:
+        """Lower the value by one step, clamped to the minimum. Returns whether it changed."""
+        return self._set_value(max(self.range[0], round(self.value - self.step, 10)))
 
-    def open(self) -> None:
-        """Enter edit mode, copying the current value to the buffer."""
-        self.is_open = True
-        self._open_value = self.value
-
-    def increment(self) -> None:
-        """Raise the buffer by one step, clamped to the maximum, if open."""
-        if self.is_open:
-            self._open_value = min(self.range[1], round(self._open_value + self.step, 10))
-
-    def decrement(self) -> None:
-        """Lower the buffer by one step, clamped to the minimum, if open."""
-        if self.is_open:
-            self._open_value = max(self.range[0], round(self._open_value - self.step, 10))
-
-    def cancel(self) -> None:
-        """Discard the buffer and exit edit mode without saving."""
-        self.is_open = False
-        self._open_value = self.value
-
-    def close(self) -> None:
-        """Commit the buffer as the new value and exit edit mode."""
-        if self.is_open:
-            if self._open_value != self.value:
-                self.is_edited = True
-                self.value = self._open_value
-                self.is_called = True
-                self.action(self.value)  # Call action once, with the new value
-            self.is_open = False
+    def _set_value(self, value: float) -> bool:
+        if value == self.value:
+            return False
+        self.value = value
+        self.is_edited = True
+        self.is_called = True
+        self.action(self.value)
+        return True
 
 
 @dataclass(kw_only=True, repr=False)
 class Selector(InteractiveElement):
     """
     One of ``selections``, stepped through with arrows pinned to the edges of
-    a fixed-size box, with the option centred between them.
+    a fixed-size box, with the option centred between them. Every step is
+    saved at once and calls ``action`` with the new index.
     """
 
     @dataclass(kw_only=True, repr=False)
@@ -826,12 +809,12 @@ class Selector(InteractiveElement):
     selection_text: SelectionText = field(default_factory=SelectionText)
     left_arrow: LeftShiftArrow = field(default_factory=LeftShiftArrow)
     right_arrow: RightShiftArrow = field(default_factory=RightShiftArrow)
-    gap: Measure = (5.0, 0.0)  # Between each arrow and the option's slot
+    gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the option's slot
 
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
     size: Measure = _CONTROL_SIZE
-    padding: Measure = _CONTROL_PADDING
+    padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
     background_color: RGBA = COLOR_PALETTE_SECONDARY
     border_color: RGBA = COLOR_PALETTE_TEXT
@@ -844,56 +827,29 @@ class Selector(InteractiveElement):
     altered_selection_color: RGBA = COLOR_PALETTE_EDITED
     disabled_arrow_color: RGBA = COLOR_PALETTE_NEUTRAL
 
-    is_open: bool = field(default=False, init=False, repr=False)
     is_edited: bool = field(default=False, init=False, repr=False)
-    _open_index: int = field(default=0, init=False, repr=False)
 
-    def is_altered(self) -> bool:
-        """"""
-        if self.is_open and not self.is_edited:
-            return self._open_index != self.value
-        else:
-            return self.is_edited
-
-    def buffer_index(self) -> int:
-        if self.is_open:
-            return self._open_index
-        else:
-            return self.value
-
-    def selection(self) -> str:
-        """"""
-        if self.is_open:
-            return self.selections[self._open_index]
+    def get_selection(self) -> str:
+        """The text of the current option."""
         return self.selections[self.value]
 
-    def open(self) -> None:
-        """Enter edit mode, copying the current value to the edit buffer."""
-        self.is_open = True
-        self._open_index = self.value
+    def next(self, is_wrapping: bool = False) -> bool:
+        """Step to the next option, or back to the first when ``is_wrapping``. Returns whether it changed."""
+        last = len(self.selections) - 1
+        return self._set_index(0 if is_wrapping and self.value >= last else min(self.value + 1, last))
 
-    def next(self) -> None:
-        if self.is_open:
-            self._open_index = min((self._open_index + 1), len(self.selections) - 1)
+    def previous(self) -> bool:
+        """Step to the previous option, stopping at the first. Returns whether it changed."""
+        return self._set_index(max(self.value - 1, 0))
 
-    def previous(self) -> None:
-        if self.is_open:
-            self._open_index = max((self._open_index - 1), 0)
-
-    def cancel(self) -> None:
-        """Discard the open buffer and exit open mode without saving."""
-        self._open_index = 0
-        self.is_open = False
-
-    def close(self) -> None:
-        """Commit the open buffer as the new value and exit open mode."""
-        if self.is_open:
-            if self.is_altered():
-                self.is_edited = True
-                self.value = self._open_index
-                self.is_called = True
-                self.action(self.value)  # Call action once, with the new index
-            self.is_open = False
+    def _set_index(self, index: int) -> bool:
+        if index == self.value:
+            return False
+        self.value = index
+        self.is_edited = True
+        self.is_called = True
+        self.action(self.value)
+        return True
 
 
 @dataclass(kw_only=True, repr=False)
@@ -901,7 +857,7 @@ class InputField(InteractiveElement):
     """
     Text typed after a terminal-style prompt, edited in a buffer that is
     committed on close when ``validator`` accepts it. Only the border shows
-    the selection; the prompt stays the neutral colour.
+    focus; the prompt stays the neutral colour.
     """
 
     @dataclass(kw_only=True, repr=False)
@@ -975,11 +931,7 @@ class InputField(InteractiveElement):
         else:
             return self.is_edited
 
-    """
-    Change value. Provide functionality for modifying the input field's text 
-    content when the input is open. Until the input is closed, the new version
-    of the text is stored in a buffer.
-    """
+    # -------------------------------------------------------------------------
 
     def open(self) -> None:
         """Enter edit mode, copying the current value to the edit buffer."""
@@ -1004,12 +956,17 @@ class InputField(InteractiveElement):
         self.is_open = False
         self._open_buffer = ""
 
-    def close(self) -> None:
-        """Commit the edit buffer as the new value and exit edit mode."""
-        if self.is_open and self.authenticate():
-            if self.is_altered():
-                self.is_edited = True
-                self.value.text = self._open_buffer
-                self.is_called = True
-                self.action(self.value.text)  # Call action once, with the new text
-            self.is_open = False
+    def close(self) -> bool:
+        """Commit the edit buffer as the new value and exit edit mode. Returns whether the buffer was valid."""
+        if not self.is_open:
+            return True
+        if not self.authenticate():
+            return False
+        if self.is_altered():
+            self.is_edited = True
+            self.value.text = self._open_buffer
+            self.is_called = True
+            self.action(self.value.text)  # Call action once, with the new text
+        self.is_open = False
+        return True
+

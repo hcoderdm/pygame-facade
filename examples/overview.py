@@ -45,13 +45,23 @@ CAPTION_COLOR = "#6E7896FF"
 DIFFICULTIES = ("EASY", "NORMAL", "HARD", "NIGHTMARE")
 
 
-def render_cell(interface: Interface, element: Element, is_selected: bool) -> pygame.Surface:
-    """``element`` alone on a menu, selected or not."""
+def render_cell(interface: Interface, element: Element, state: str = "idle", part: str = "") -> pygame.Surface:
+    """
+    ``element`` alone on a menu in ``state``: ``"idle"``, ``"focused"`` by the
+    keys, under the ``"pointer"`` at ``part``, or ``"typing"`` into an input
+    field.
+    """
     # An invisible selectable gap holds the selection when the element should look idle
     holder = Gap(is_selectable=True, is_visible=False)
     menu = Menu(root_elements=[holder, element], root_padding=(12.0, 12.0), root_alignment=AlignmentType.TOPLEFT)
-    if is_selected:
+    if state != "idle":
         menu.select_element_by_id(element.id)
+    if state == "pointer":
+        menu.set_pointer_leading(True)
+        menu.set_hovered(element, part)
+    if state == "typing" and isinstance(element, InputField):
+        element.open()
+        element.append("2")
     interface.clear()
     interface.push(menu)
     surface = interface.render()
@@ -59,23 +69,11 @@ def render_cell(interface: Interface, element: Element, is_selected: bool) -> py
     return surface.copy()
 
 
-def opened(element, *steps: str):
-    """``element`` opened for editing, with each named method called once."""
-    element.open()
+def changed(element, *steps: str):
+    """``element`` after each named method is called once, so it shows its changed colour."""
     for step in steps:
         getattr(element, step)()
     return element
-
-
-def typed(field: InputField, text: str) -> InputField:
-    field.open()
-    field.append(text)
-    return field
-
-
-def toggled(toggle: Toggle) -> Toggle:
-    toggle()
-    return toggle
 
 
 def main() -> None:
@@ -86,29 +84,48 @@ def main() -> None:
     font = interface.fonts.get_font("editundo.ttf", NATIVE_FONT_SIZE)
     title_font = interface.fonts.get_font("editundo.ttf", 2 * NATIVE_FONT_SIZE)
 
-    # Each row is a name, an optional note, and (element, is_selected) per column; None leaves a cell empty
+    def player() -> InputField:
+        return InputField(value=InputField.InputValueText(text="PLAYER"))
+
+    def edited_player() -> InputField:
+        field = player()
+        field.open()
+        field.append("2")
+        field.close()
+        return field
+
+    # Each row is a name, an optional note, and (element, state, part) per column; None leaves a cell empty
     rows = [
-        ("BUTTON", None, [(Button(label=Button.ButtonText(text="START")), False), (Button(label=Button.ButtonText(text="START")), True), None]),
-        ("TOGGLE", None, [(Toggle(), False), (Toggle(), True), (toggled(Toggle()), True)]),
+        ("BUTTON", None, [
+            (Button(label=Button.ButtonText(text="START")), "idle", ""),
+            (Button(label=Button.ButtonText(text="START")), "focused", ""),
+            (Button(label=Button.ButtonText(text="START")), "pointer", "body"),
+            None,
+        ]),
+        ("TOGGLE", None, [
+            (Toggle(), "idle", ""), (Toggle(), "focused", ""), (Toggle(), "pointer", "body"),
+            (changed(Toggle(), "__call__"), "idle", ""),
+        ]),
         ("SELECTOR", None, [
-            (Selector(selections=DIFFICULTIES, value=1), False),
-            (Selector(selections=DIFFICULTIES, value=1), True),
-            (opened(Selector(selections=DIFFICULTIES, value=1), "next", "next"), True),
+            (Selector(selections=DIFFICULTIES, value=1), "idle", ""),
+            (Selector(selections=DIFFICULTIES, value=1), "focused", ""),
+            (Selector(selections=DIFFICULTIES, value=1), "pointer", "right"),
+            (changed(Selector(selections=DIFFICULTIES, value=1), "next", "next"), "idle", ""),
         ]),
         ("SLIDER", None, [
-            (Slider(value=0.6), False),
-            (Slider(value=0.6), True),
-            (opened(Slider(value=0.6), "decrement", "decrement"), True),
+            (Slider(value=0.6), "idle", ""),
+            (Slider(value=0.6), "focused", ""),
+            (Slider(value=0.6), "pointer", "right"),
+            (changed(Slider(value=0.6), "decrement", "decrement"), "idle", ""),
         ]),
-        ("SLIDER ENDS", "AT 0% / AT 100%", [(Slider(value=0.0), True), (Slider(value=1.0), True), None]),
+        ("SLIDER ENDS", "AT 0% / AT 100%", [None, (Slider(value=0.0), "focused", ""), (Slider(value=1.0), "pointer", "right"), None]),
         ("INPUT FIELD", None, [
-            (InputField(value=InputField.InputValueText(text="PLAYER")), False),
-            (InputField(value=InputField.InputValueText(text="PLAYER")), True),
-            (typed(InputField(value=InputField.InputValueText(text="PLAYER")), "2"), True),
+            (player(), "idle", ""), (player(), "focused", ""), (player(), "typing", ""),
+            (edited_player(), "idle", ""),
         ]),
-        ("PROGRESS BAR", "25% / 60% / 100%", [(ProgressBar(value=value), False) for value in (0.25, 0.6, 1.0)]),
+        ("PROGRESS BAR", "25% / 60% / 100%", [(ProgressBar(value=value), "idle", "") for value in (0.25, 0.6, 1.0)] + [None]),
     ]
-    columns = ("IDLE", "SELECTED", "OPEN / CHANGED")
+    columns = ("IDLE", "FOCUSED BY KEYS", "UNDER THE POINTER / TYPING", "CHANGED")
 
     sheet = pygame.Surface((LABEL_PW + CELL_SIZE[0] * len(columns) + 10, HEADER_PH + len(rows) * CELL_SIZE[1]))
     sheet.fill(SHEET_COLOR)

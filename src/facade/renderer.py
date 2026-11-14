@@ -66,6 +66,9 @@ _DEBUG_HIT_RECT_COLOR = "#00FF80FF"
 
 _ROTATION_DEGREES = {RotationType.LEFT: 90, RotationType.RIGHT: -90, RotationType.UPTURNED: 180}
 
+_PART_INSET_PX = 3  # Room around each arrow, matching the toggle's inset
+_REVEAL_MARGIN_PH = 8  # Room kept above or below an element scrolled into view by the keys
+
 
 # -----------------------------------------------------------------------------
 
@@ -299,7 +302,8 @@ class _MenuTree:
     menu: Menu
     size: tuple[int, int]
     render_version: int
-    selection_id: str | None
+    selection_id: str | None  # The element drawn with the focused look: the hovered one or the keys' selection
+    pointer_part: str | None = None
 
     root: Node | None = None
     rendered_glyphs: list[tuple[InputField, str]] = field(default_factory=list)
@@ -356,7 +360,7 @@ class MenuRenderer:
     # -------------------------------------------------------------------------
 
     def _compose_tree(self, menu: Menu, size: tuple[int, int]) -> _MenuTree:
-        tree = _MenuTree(menu, size, Element._render_version, menu.get_selection_id())
+        tree = _MenuTree(menu, size, Element._render_version, menu.get_lit_id(), menu.get_pointer_part())
         tree.root = self._compose_node(menu._div, tree, _MenuTree.Space(range(size[0], size[0]), range(size[1], size[1])))
         return tree
 
@@ -559,52 +563,55 @@ class MenuRenderer:
 
     @_compose_content.register(Button)
     def _(self, element: Button, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        is_selected = tree.selection_id == element.id
-        if is_selected:
+        if tree.selection_id == element.id:
             element = replace(element, border_color=element.selected_border_color, label=replace(element.label, text_color=element.selected_text_color))
         return _MenuTree.Node(element, children=[self._compose_node(element.label, tree, space)])
 
     @_compose_content.register(Toggle)
     def _(self, element: Toggle, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        is_selected = tree.selection_id == element.id
-        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
+        is_lit = tree.selection_id == element.id
+        eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
         fill_color = element.edited_fill_color if element.is_called else element.fill_color
 
         # The halves split the inner width, so the filled one sits the padding away from every edge
         half_pw, half_ph = space.range_pw.start // 2, space.range_ph.start
         halves = []
         for text, is_filled in ((element.false_text, not element.value), (element.true_text, element.value)):
-            label = replace(element.label, text=text, text_color=element.filled_text_color if is_filled else element.label.text_color)
+            if is_filled:
+                text_color, background = element.filled_text_color, fill_color
+            else:
+                text_color, background = element.selected_text_color if is_lit else element.label.text_color, TRANSPARENT
             halves.append(HorizontalDivision(
-                elements=[label], size=(half_pw, half_ph), alignment=AlignmentType.CENTER, gap=(0.0, 0.0),
-                background_color=fill_color if is_filled else TRANSPARENT,
+                elements=[replace(element.label, text=text, text_color=text_color)], size=(half_pw, half_ph),
+                alignment=AlignmentType.CENTER, gap=(0.0, 0.0), background_color=background,
             ))
         row = HorizontalDivision(elements=halves, gap=(0.0, 0.0))
         return _MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
 
     @_compose_content.register(Selector)
     def _(self, element: Selector, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        is_selected = tree.selection_id == element.id
-        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
+        is_lit = tree.selection_id == element.id
+        eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
 
-        selection_text = replace(element.selection_text, text=element.selection())
-        if element.is_altered():
+        selection_text = replace(element.selection_text, text=element.get_selection())
+        if element.is_edited:
             selection_text = replace(selection_text, text_color=element.altered_selection_color)
-        index = element.buffer_index()
-        left_arrow = self._color_arrow(element.left_arrow, index == 0, is_selected, element.selected_arrow_color, element.disabled_arrow_color)
-        right_arrow = self._color_arrow(element.right_arrow, index == len(element.selections) - 1, is_selected, element.selected_arrow_color, element.disabled_arrow_color)
+        left_zone = self._make_arrow_zone(element, element.left_arrow, "left", element.value == 0, is_lit, tree)
+        right_zone = self._make_arrow_zone(element, element.right_arrow, "right", element.value == len(element.selections) - 1, is_lit, tree)
 
         # The option gets a fixed slot between the arrows, so changing it never moves them
         gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
-        slot_pw = max(0, space.range_pw.start - self._measure_text(left_arrow) - self._measure_text(right_arrow) - 2 * gap_pw)
+        zones_pw = self._measure_arrow_zone(element.left_arrow) + self._measure_arrow_zone(element.right_arrow)
+        slot_pw = max(0, space.range_pw.start - zones_pw - 2 * gap_pw)
         slot = HorizontalDivision(elements=[selection_text], size=(slot_pw, 0.0), alignment=AlignmentType.CENTER, gap=(0.0, 0.0))
-        row = HorizontalDivision(elements=[left_arrow, slot, right_arrow], gap=(gap_pw, 0.0))
+        row = HorizontalDivision(elements=[left_zone, slot, right_zone], gap=(gap_pw, 0.0))
         return _MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
 
     @_compose_content.register(InputField)
     def _(self, element: InputField, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        is_selected = tree.selection_id == element.id
-        eff_element = replace(element, border_color=element.selected_border_color) if is_selected else element
+        # A field being typed into stays lit even with the pointer over empty space
+        is_lit = tree.selection_id == element.id or element.is_open
+        eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
 
         glyph = element.get_cursor_glyph()
         tree.rendered_glyphs.append((element, glyph))
@@ -615,10 +622,17 @@ class MenuRenderer:
             value_text = replace(value_text, text_color=element.edited_text_color)
 
         parts: list[Element] = [element.prompt]
-        if not element.get_field():
-            parts.append(element.hint)
-        if value_text.text:
+        if element.get_field():
             parts.append(value_text)
+        elif glyph:
+            # The cursor is drawn over the start of the hint rather than after it, so the hint never moves. It comes
+            # after the hint so it draws on top, shifted back by the hint's width; with no size and OVERFLOW it
+            # takes no room, and START keeps it on the hint's top row
+            hint_pw = self._measure_text(element.hint)
+            cursor = replace(value_text, size=(0.0, 0.0), overflow=OverflowType.OVERFLOW, justify=JustifyType.START, offset=(-float(hint_pw), 0.0))
+            parts.append(HorizontalDivision(elements=[element.hint, cursor], gap=(0.0, 0.0)))
+        else:
+            parts.append(element.hint)
         gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
         row = HorizontalDivision(elements=parts, gap=(gap_pw, 0.0))
         return _MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
@@ -630,9 +644,9 @@ class MenuRenderer:
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
         padding = self._resolve_measure(element.padding, element.padding_measure, space)
         is_selected = tree.selection_id == element.id
-        value = element.get_buffer_value() if isinstance(element, Slider) else element.value
+        value = element.value
         fraction = element.get_fraction(value)
-        is_altered = isinstance(element, Slider) and element.is_altered()
+        is_altered = isinstance(element, Slider) and element.is_edited
 
         def box(elements: list[Element], pw: int, border_color: RGBA, gap_pw: int = 0) -> HorizontalDivision:
             return HorizontalDivision(
@@ -645,15 +659,15 @@ class MenuRenderer:
 
         bar_pw = size_pw - (element.box_gap_pw + element.number_pw if element.use_number else 0)
         strip_pw = max(0, bar_pw - 2 * (padding[0] + element.border_thickness))
-        arrows: tuple[Text, Text] | None = None
+        arrows: tuple[Element, Element] | None = None
         gap_pw = 0
         if isinstance(element, Slider):
             arrows = (
-                self._color_arrow(element.left_arrow, fraction <= 0.0, is_selected, element.selected_arrow_color, element.disabled_arrow_color),
-                self._color_arrow(element.right_arrow, fraction >= 1.0, is_selected, element.selected_arrow_color, element.disabled_arrow_color),
+                self._make_arrow_zone(element, element.left_arrow, "left", fraction <= 0.0, is_selected, tree),
+                self._make_arrow_zone(element, element.right_arrow, "right", fraction >= 1.0, is_selected, tree),
             )
             gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
-            strip_pw -= sum(self._measure_text(arrow) for arrow in arrows) + 2 * gap_pw
+            strip_pw -= self._measure_arrow_zone(element.left_arrow) + self._measure_arrow_zone(element.right_arrow) + 2 * gap_pw
         count = max(1, element.segments)
         strip = _SegmentStrip(
             count=count, filled=int(fraction * count + 0.5),
@@ -733,13 +747,18 @@ class MenuRenderer:
         """Laid-out width of ``text`` on one line."""
         return self._text_cache.get_surf(text, 0)[1].width
 
-    @staticmethod
-    def _color_arrow(arrow: Text, is_disabled: bool, is_selected: bool, selected_color: RGBA, disabled_color: RGBA) -> Text:
+    def _make_arrow_zone(self, element: Selector | Slider, arrow: Text, side: str, is_disabled: bool, is_lit: bool, tree: _MenuTree) -> HorizontalDivision:
+        # Under the pointer only the arrow on its side lights; with the keys both do
         if is_disabled:
-            return replace(arrow, text_color=disabled_color)
-        if is_selected:
-            return replace(arrow, text_color=selected_color)
-        return arrow
+            color = element.disabled_arrow_color
+        elif is_lit and tree.pointer_part in (None, side):
+            color = element.selected_arrow_color
+        else:
+            color = arrow.text_color
+        return HorizontalDivision(elements=[replace(arrow, text_color=color)], padding=(_PART_INSET_PX, _PART_INSET_PX), gap=(0.0, 0.0))
+
+    def _measure_arrow_zone(self, arrow: Text) -> int:
+        return self._measure_text(arrow) + 2 * _PART_INSET_PX
 
     # -------------------------------------------------------------------------
 
@@ -855,11 +874,111 @@ class MenuRenderer:
 
     def select_element_at(self, menu: Menu, pos: tuple[int, int]) -> Element | None:
         """Select and return the deepest selectable element under ``pos``, if any."""
+        element = self.find_selectable_at(menu, pos)
+        if element is not None:
+            menu.select_element_by_id(element.id)
+        return element
+
+    def find_selectable_at(self, menu: Menu, pos: tuple[int, int]) -> Element | None:
+        """The deepest selectable element under window position ``pos``, if any."""
         elements = self.find_elements_at(menu, pos)
-        if elements and elements[0].is_selectable:
-            menu.select_element_by_id(elements[0].id)
-            return elements[0]
-        return None
+        return elements[0] if elements and elements[0].is_selectable else None
+
+    def get_element_rect(self, menu: Menu, element: Element) -> pygame.Rect | None:
+        """Where ``element`` was drawn on the last render of ``menu``, in facade pixels, or ``None``."""
+        tree = self._menu_tree
+        if tree is None or tree.menu is not menu:
+            return None
+        for hit, rect in tree.hit_rects:
+            if hit is element:
+                return rect
+        return next((rect for drawn, rect in tree.element_rects if drawn is element), None)
+
+    def get_part_at(self, menu: Menu, element: Element, pos: tuple[int, int]) -> str:
+        """
+        The part of ``element`` under window position ``pos``: ``"body"`` for a
+        button or a toggle, which flips wherever it is clicked, ``"left"`` or
+        ``"right"`` for a side of a selector or slider bar, ``"text"`` for an
+        input field, or ``""`` for none.
+        """
+        rect = self.get_element_rect(menu, element)
+        if rect is None:
+            return ""
+        px = pos[0]
+        if isinstance(element, (Button, Toggle)):
+            return "body"
+        if isinstance(element, Selector):
+            return "left" if px < rect.centerx else "right"
+        if isinstance(element, Slider):
+            bar_pw = rect.width - (element.box_gap_pw + element.number_pw if element.use_number else 0)
+            if px >= rect.x + bar_pw:
+                return ""  # The number box only shows the value
+            return "left" if px < rect.x + bar_pw // 2 else "right"
+        if isinstance(element, InputField):
+            return "text"
+        return ""
+
+    def find_neighbour(self, menu: Menu, element: Element, direction: str, is_wrapping: bool) -> Element | None:
+        """
+        The nearest selectable element from ``element`` towards ``direction``
+        (``"up"``, ``"down"``, ``"left"`` or ``"right"``) by where they were
+        drawn. With ``is_wrapping``, running off one end continues from the
+        far side. ``None`` when there is nowhere to go or nothing is drawn.
+        """
+        tree = self._menu_tree
+        current = self.get_element_rect(menu, element)
+        if tree is None or tree.menu is not menu or current is None:
+            return None
+        rects: dict[int, tuple[Element, pygame.Rect]] = {}
+        for hit, rect in tree.hit_rects:
+            if hit is not element and hit.is_visible:
+                rects.setdefault(id(hit), (hit, rect))
+        is_vertical = direction in ("up", "down")
+        sign = 1 if direction in ("down", "right") else -1
+
+        def along(rect: pygame.Rect) -> int:
+            return (rect.centery - current.centery) if is_vertical else (rect.centerx - current.centerx)
+
+        def across(rect: pygame.Rect) -> int:
+            return abs(rect.centerx - current.centerx) if is_vertical else abs(rect.centery - current.centery)
+
+        def is_in_line(rect: pygame.Rect) -> bool:
+            # Shares the row for a sideways move, or the column for an up or down one
+            if is_vertical:
+                return rect.left < current.right and rect.right > current.left
+            return rect.top < current.bottom and rect.bottom > current.top
+
+        # Elements in line win over nearer ones off to the side, so a row of buttons is crossed before moving down
+        ahead = [(hit, rect) for hit, rect in rects.values() if along(rect) * sign > 0]
+        if ahead:
+            return min(ahead, key=lambda item: (not is_in_line(item[1]), abs(along(item[1])), across(item[1])))[0]
+        if not is_wrapping or not rects:
+            return None
+        behind = [(hit, rect) for hit, rect in rects.values() if along(rect) * sign < 0]
+        if not behind:
+            return None
+        return min(behind, key=lambda item: (not is_in_line(item[1]), along(item[1]) * sign, across(item[1])))[0]
+
+    def is_element_in_view(self, menu: Menu, element: Element) -> bool:
+        """Whether all of ``element`` is inside the window at ``menu``'s scroll, as of the last render."""
+        tree = self._menu_tree
+        rect = self.get_element_rect(menu, element)
+        if tree is None or rect is None:
+            return True
+        return rect.top >= menu._scroll and rect.bottom <= menu._scroll + tree.size[1]
+
+    def reveal_element(self, menu: Menu, element: Element) -> None:
+        """Scroll ``menu`` the least needed to show ``element`` with a margin around it."""
+        tree = self._menu_tree
+        rect = self.get_element_rect(menu, element)
+        if tree is None or rect is None:
+            return
+        view_ph = tree.size[1]
+        top_py, bottom_py = rect.top - _REVEAL_MARGIN_PH, rect.bottom + _REVEAL_MARGIN_PH
+        if top_py < menu._scroll:
+            menu._scroll = float(max(0, top_py))
+        elif bottom_py > menu._scroll + view_ph:
+            menu._scroll = float(bottom_py - view_ph)
 
     # -------------------------------------------------------------------------
 

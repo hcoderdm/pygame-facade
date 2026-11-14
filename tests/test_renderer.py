@@ -8,7 +8,7 @@ import time
 
 import pygame
 
-from facade import AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, NormalText, ProgressBar, Slider, Toggle
+from facade import AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, NormalText, ProgressBar, Selector, Slider, Toggle
 from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
@@ -267,11 +267,10 @@ def test_rendering_a_slider_is_not_an_edit():
     assert Element._render_version == version
 
 
-def test_stepping_an_open_slider_redraws():
+def test_stepping_a_slider_redraws():
     slider = Slider()
     ui = Interface(size=SIZE)
     ui.push(Panel(root_elements=[slider]))
-    slider.open()
     first = ui.render()
 
     slider.increment()
@@ -381,3 +380,99 @@ def test_border_without_background_leaves_the_inside_clear():
     assert surface.get_at(rect.topleft) == pygame.Color("#FF0000FF")
     assert surface.get_at((rect.left + 1, rect.centery)) == pygame.Color("#FF0000FF")
     assert surface.get_at(rect.center) == pygame.Color(Panel().root_background_color)
+
+
+def count_pixels(surface, rect, color):
+    target = pygame.Color(color)
+    return sum(surface.get_at((px, py)) == target for px in range(rect.left, rect.right) for py in range(rect.top, rect.bottom))
+
+
+def test_pointer_lights_only_the_arrow_on_its_side():
+    selector = Selector(selections=("A", "B", "C"), value=1)
+    ui = Interface(size=SIZE)
+    menu = Panel(root_elements=[selector])
+    ui.push(menu)
+    keys_surface = ui.render()
+    rect = hit_rect_of(ui, selector)
+    left_zone = pygame.Rect(rect.left + 1, rect.top + 1, 20, rect.height - 2)
+    right_zone = pygame.Rect(rect.right - 21, rect.top + 1, 20, rect.height - 2)
+    assert count_pixels(keys_surface, left_zone, selector.selected_arrow_color) > 0  # The keys light both arrows
+
+    menu.set_pointer_leading(True)
+    menu.set_hovered(selector, "right")
+    pointer_surface = ui.render()
+
+    assert count_pixels(pointer_surface, left_zone, selector.selected_arrow_color) == 0
+    assert count_pixels(pointer_surface, right_zone, selector.selected_arrow_color) > 0
+
+
+def test_focused_toggle_shows_the_other_option_in_the_accent_colour():
+    toggle = Toggle()
+    ui = Interface(size=SIZE)
+    menu = Panel(root_elements=[toggle])
+    ui.push(menu)
+    lit = ui.render()
+    rect = hit_rect_of(ui, toggle)
+    true_half = pygame.Rect(rect.centerx, rect.top + 4, rect.width // 2 - 4, rect.height - 8)
+    assert count_pixels(lit, true_half, toggle.selected_text_color) > 0
+
+    menu.set_pointer_leading(True)  # With the pointer over nothing
+    unlit = ui.render()
+
+    assert count_pixels(unlit, true_half, toggle.selected_text_color) == 0
+
+
+def test_holding_the_pointer_down_changes_nothing_on_screen():
+    button = Button(label=Button.ButtonText(text="GO"))
+    ui = Interface(size=SIZE)
+    menu = Panel(root_elements=[button])
+    ui.push(menu)
+    first = ui.render()
+
+    menu.set_pressed_part(button, "body")
+
+    assert ui.render() is first
+
+
+def test_pointer_over_nothing_lights_nothing():
+    button = Button(label=Button.ButtonText(text="GO"))
+    ui = Interface(size=SIZE)
+    menu = Panel(root_elements=[button])
+    ui.push(menu)
+    menu.set_pointer_leading(True)
+    surface = ui.render()
+
+    assert surface.get_at(hit_rect_of(ui, button).topleft) == pygame.Color(button.border_color)
+
+
+def test_hover_redraws_only_when_it_changes():
+    selector = Selector(selections=("A", "B"))
+    ui = Interface(size=SIZE)
+    menu = Panel(root_elements=[selector])
+    ui.push(menu)
+    menu.set_pointer_leading(True)
+    menu.set_hovered(selector, "left")
+    first = ui.render()
+
+    menu.set_hovered(selector, "left")
+    assert ui.render() is first
+    menu.set_hovered(selector, "right")
+    assert ui.render() is not first
+
+
+def test_cursor_in_an_empty_field_sits_on_the_hint_without_moving_it(monkeypatch):
+    field = InputField(value=InputField.InputValueText(text=""), hint=InputField.InputHintText(text="[ESC]"))
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[field]))
+    ui.render()
+
+    def text_rect(text):
+        return next(rect for drawn, rect in ui.renderer._menu_tree.element_rects if isinstance(drawn, NormalText) and drawn.text == text)
+
+    closed_hint = text_rect("[ESC]")
+    monkeypatch.setattr(time, "monotonic", lambda: 0.0)
+    field.open()  # The cursor shows at once after opening
+    ui.render()
+
+    assert text_rect("[ESC]").topleft == closed_hint.topleft
+    assert text_rect("_").topleft == closed_hint.topleft
