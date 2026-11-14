@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from abc import ABC
 from dataclasses import dataclass, field
-import math
 import uuid
 
 from .elements import (
@@ -33,8 +32,6 @@ class Menu(ABC):
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
 
     _scroll: float = 0.0
-    _dscroll: float = 0.0
-    _d2scroll: float = 0.0
 
     # Root division config — controls how elements are laid out inside the menu.
     root_elements: list[Element] = field(default_factory=list)
@@ -56,7 +53,6 @@ class Menu(ABC):
     root_background_alpha: int = 0xFF
     root_border_thickness: int = 0
     root_border_color: Color = "#00000000"
-    root_is_flexible: bool = False
     root_is_selectable: bool = False
     root_is_visible: bool = True
  
@@ -96,31 +92,6 @@ class Menu(ABC):
             is_visible=self.root_is_visible,
         )
         self._selected_index = 0
-
-    """Scroll helpers"""
-
-    def apply_scroll_impulse(self, accel: float) -> None:
-        self._d2scroll += accel
-
-    def integrate_scroll(self, max_scroll: float, dt: float, drag: float, deadzone: float) -> None:
-        self._dscroll += self._d2scroll * dt
-        self._dscroll *= math.exp(-drag * dt)
-
-        if abs(self._dscroll) < deadzone:
-            self._dscroll *= 0.5
-
-        self._scroll += self._dscroll * dt
-
-        if self._scroll < 0.0:
-            if self._dscroll < 0:
-                self._dscroll = 0.0
-            self._scroll = 0.0
-        elif self._scroll > max_scroll:
-            if self._dscroll > 0:
-                self._dscroll = 0.0
-            self._scroll = max_scroll
-
-        self._d2scroll = 0.0
 
     # -------------------------------------------------------------------------
 

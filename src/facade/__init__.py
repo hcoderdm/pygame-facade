@@ -25,7 +25,6 @@ from .elements import (
     HeadingTwoText,
     HorizontalDivision,
     Image,
-    ImageTransformType,
     InputField,
     InteractiveElement,
     JustifyType,
@@ -38,7 +37,6 @@ from .elements import (
     ProgressBar,
     RotationType,
     SectionHeader,
-    SelectedModifier,
     Selector,
     Slider,
     SubtitleText,
@@ -68,7 +66,6 @@ __all__ = [
     "Interface",
     # Elements.
     "Element",
-    "SelectedModifier",
     "Division",
     "HorizontalDivision",
     "VerticalDivision",
@@ -104,7 +101,6 @@ __all__ = [
     "JustifyType",
     "AlignmentType",
     "TextDecorationType",
-    "ImageTransformType",
     "OverflowType",
     "RotationType",
     # Theme and font grid.

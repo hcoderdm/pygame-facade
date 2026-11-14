@@ -47,7 +47,6 @@ _UNSET = object()  # Marks an attribute not yet assigned on an instance.
 
 RGBA = Annotated[str, f"regex:{RGBA_REGEX}"]
 Measure = Annotated[tuple[float, float], ""]
-Angle = Annotated[float, "radians", "range: [0, 2π]"]
 Color = RGBA | ThemeColorType  # A fixed colour, or a role the active theme decides.
 # One paragraph of a TextBlock: plain text, or strings mixed with styled spans. The alias is lazy because ``Text`` comes later.
 type Paragraph = str | list[str | Text]
@@ -109,17 +108,6 @@ class TextDecorationType(Flag):
     ITALIC = auto()
     STRIKETHROUGH = auto()
     UNDERLINE = auto()
-
-
-class ImageTransformType(Flag):
-    """"""
-
-    NONE = 0
-    FLIP_X = auto()  # Flip sprite horizontally.
-    FLIP_Y = auto()  # Flip sprite vertically.
-    ROTATE_CCW_90 = auto()  # Rotate 90 degrees counterclockwise.
-    ROTATE_CCW_180 = auto()  # Rotate 180 degrees counterclockwise.
-    ROTATE_CCW_270 = auto()  # Rotate 270 degrees counterclockwise.
 
 
 class OverflowType(Enum):
@@ -197,6 +185,7 @@ class Element(ABC):
     is_visible: bool = True
     is_fixed: bool = False
 
+    # Incremented whenever an element's state changes.
     _render_version: ClassVar[int] = 0
 
     # Element dataclasses are declared with repr=False; otherwise @dataclass
@@ -219,21 +208,6 @@ class Element(ABC):
 
 
 @dataclass(kw_only=True, repr=False)
-class SelectedModifier(Element):
-    """Per-element overrides applied when the element is the current selection.
-
-    Every field mirrors an ``Element`` property but defaults to ``None``,
-    meaning "keep the element's own value."  Only non-``None`` fields take
-    effect while the element is selected.
-    """
-
-    text_color: Color = ThemeColorType.PRIMARY
-
-
-# -----------------------------------------------------------------------------
-
-
-@dataclass(kw_only=True, repr=False)
 class Division(Element):
     """
     Represents a container element that groups multiple Element instances
@@ -242,15 +216,11 @@ class Division(Element):
     """
 
     elements: list[Element] = field(default_factory=lambda: [])
-
     gap: Measure = (4.0, 4.0)  # Spacing between internal elements.
     gap_measure: MeasureType = MeasureType.ABSOLUTE
-
     background_color: Color = TRANSPARENT
     shadow_color: Color = TRANSPARENT
-
     is_selectable: bool = False  # Containers are not directly selectable.
-    is_expandable: bool = False
 
 
 @dataclass(kw_only=True, repr=False)
@@ -261,8 +231,6 @@ class HorizontalDivision(Division):
     add additional attributes or methods.
     """
 
-    pass
-
 
 @dataclass(kw_only=True, repr=False)
 class VerticalDivision(Division):
@@ -271,9 +239,6 @@ class VerticalDivision(Division):
     inherits all behavior from Division without adding new attributes or
     methods.
     """
-
-    pass
-
 
 
 @dataclass(kw_only=True, repr=False)
@@ -284,17 +249,8 @@ class Gap(Element):
     selectability, and expandability. Inherits from Element.
     """
 
-    anchor: Measure = (0.0, 0.0)
-    margin: Measure = (0.0, 0.0)
-    offset: Measure = (0.0, 0.0)
-    padding: Measure = (0.0, 0.0)
-
     background_color: Color = TRANSPARENT
-    shadow_color: Color = TRANSPARENT
-
-    is_flexible: bool = False
     is_selectable: bool = False
-    is_expandable: bool = False
 
 
 @dataclass(kw_only=True, repr=False)
@@ -329,10 +285,8 @@ class Text(Element):
     text_background: Color = TRANSPARENT  # Highlight color.
     text_alpha: int = 0xFF
     text_decorations: TextDecorationType = TextDecorationType.NONE
-
     font_name: str = "editundo.ttf"
     font_size: int = NATIVE_FONT_SIZE
-
     background_color: Color = TRANSPARENT
     is_selectable: bool = False  # Static labels are not selectable.
     is_wrappable: bool = False
@@ -387,7 +341,6 @@ class HeadingOneText(Text):
 
     font_name: str = "editundo.ttf"
     font_size: int = NATIVE_FONT_SIZE * 4
-
     text_color: Color = ThemeColorType.HEADING
     shadow_color: Color = ThemeColorType.HEADING_SHADOW
     shadow_offset: Measure = (4.0, 4.0)  # One font pixel at this size.
@@ -403,7 +356,6 @@ class HeadingTwoText(Text):
 
     font_name: str = "editundo.ttf"
     font_size: int = NATIVE_FONT_SIZE * 2
-
     text_color: Color = ThemeColorType.HEADING
     shadow_color: Color = ThemeColorType.HEADING_SHADOW
     shadow_offset: Measure = (2.0, 2.0)
@@ -419,7 +371,6 @@ class HeadingThreeText(Text):
 
     font_name: str = "editundo.ttf"
     font_size: int = NATIVE_FONT_SIZE
-
     text_color: Color = ThemeColorType.HEADING
     shadow_color: Color = ThemeColorType.HEADING_SHADOW
     shadow_offset: Measure = (1.0, 1.0)
@@ -431,17 +382,9 @@ class Image(Element):
     """"""
 
     image_path: str  # Path to the sprite image file.
-
-    scale: tuple[float, float] = (1.0, 1.0)  # Scale factors for image resizing.
-    transform: ImageTransformType = ImageTransformType.NONE  # Built-in transformation flags for flipping/rotating.
-    tint: RGBA = TRANSPARENT  # Color tint (RGBA) applied to image.
-    alpha: float = 1.0  # Transparency level (0.0 = transparent, 1.0 = opaque).
-
     alignment: AlignmentType = AlignmentType.BOTTOMRIGHT
-
     is_fixed: bool = True
     background_color: Color = TRANSPARENT
-
     is_selectable: bool = False  # Images are not selectable.
 
 
@@ -476,7 +419,6 @@ class TextBlock(Element):
     body_text: Text = field(default_factory=BodyText)
     line_gap_ph: int = 6  # From the baseline of one line to the capitals of the next.
     paragraph_gap_ph: int = 14
-
     background_color: Color = TRANSPARENT
     is_selectable: bool = False
 
@@ -515,13 +457,11 @@ class CreditList(Element):
     credits: list[tuple[str, str]] = field(default_factory=list)  # (role, name) pairs.
     role_text: Text = field(default_factory=RoleText)
     name_text: Text = field(default_factory=NameText)
-
     leader_color: Color = ThemeColorType.BORDER_DISPLAY
     dot_pw: int = 2  # Each dot is square.
     dot_gap_pw: int = 2
     leader_gap_pw: int = 6  # Kept clear between the leader and the text on either side.
     row_gap_ph: int = 6
-
     background_color: Color = TRANSPARENT
     is_selectable: bool = False
 
@@ -543,7 +483,6 @@ class SectionHeader(Element):
     rule_color: Color = ThemeColorType.BORDER_DISPLAY
     rule_ph: int = 2
     rule_gap_pw: int = 6  # Between the label and the rule.
-
     background_color: Color = TRANSPARENT
     is_selectable: bool = False
 
@@ -564,19 +503,16 @@ class ProgressBar(Element):
 
     value: float = 0.0  # Current value; values outside the range are clamped when drawn.
     range: tuple[float, float] = (0.0, 1.0)  # Values drawn as an empty and a full bar.
-
     segments: int = 10  # The segments share whatever width the bar box has.
     segment_gap_pw: int = 2
     segment_ph: int = 8  # The height of a capital at the native font size.
     fill_color: Color = ThemeColorType.FILL
     empty_color: Color = ThemeColorType.SURFACE_INPUT
-
     number_text: Text = field(default_factory=NumberText)
     value_format: str = "{fraction:.0%}"  # str.format pattern given ``value`` and ``fraction``.
     number_pw: int = 40  # Fits "100%".
     box_gap_pw: int = 6  # Between the bar box and the number box.
     use_number: bool = True
-
     size: Measure = _CONTROL_SIZE
     padding: Measure = _CONTROL_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
@@ -585,7 +521,6 @@ class ProgressBar(Element):
     border_thickness: int = 1
     shadow_color: Color = TRANSPARENT  # Display boxes sit flat; only inputs cast a shadow.
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
-
     is_selectable: bool = False
 
     def get_fraction(self, value: float | None = None) -> float:
@@ -653,7 +588,6 @@ class Button(InteractiveElement):
     border_thickness: int = 1
     shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
-
     selected_border_color: Color = ThemeColorType.PRIMARY
     selected_text_color: Color = ThemeColorType.PRIMARY
 
@@ -679,7 +613,6 @@ class PrimaryButton(Button):
         text_color: Color = ThemeColorType.SURFACE_INPUT
 
     label: Text = field(default_factory=PrimaryButtonText)
-
     padding: Measure = (3.0, 3.0)  # Gap around the bar, the same on every side.
     fill_color: Color = ThemeColorType.FILL
     selected_fill_color: Color = ThemeColorType.PRIMARY
@@ -703,11 +636,9 @@ class Toggle(InteractiveElement):
 
     value: bool = False
     action: Callable[[Any], bool] = field(default=lambda v: True)
-
     label: Toggle.ToggleText = field(default_factory=ToggleText)
     false_text: str = "FALSE"
     true_text: str = "TRUE"
-
     size: Measure = _CONTROL_SIZE
     padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
@@ -716,7 +647,6 @@ class Toggle(InteractiveElement):
     border_thickness: int = 1
     shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
-
     fill_color: Color = ThemeColorType.FILL
     edited_fill_color: Color = ThemeColorType.WARNING
     filled_text_color: Color = ThemeColorType.SURFACE_INPUT
@@ -747,13 +677,10 @@ class Slider(InteractiveElement, ProgressBar):
     value: float = 0.0
     range: tuple[float, float] = (0, 1)
     step: float = 0.1
-
     left_arrow: Text = field(default_factory=lambda: Selector.LeftShiftArrow())
     right_arrow: Text = field(default_factory=lambda: Selector.RightShiftArrow())
     gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the segments.
-
     action: Callable[[Any], bool] = field(default=lambda v: True)
-
     empty_color: Color = ThemeColorType.SURFACE_DISPLAY
 
     # InteractiveElement restores Element's defaults over ProgressBar's, so the box is declared again.
@@ -765,12 +692,10 @@ class Slider(InteractiveElement, ProgressBar):
     border_thickness: int = 1
     shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
-
     selected_border_color: Color = ThemeColorType.PRIMARY
     selected_arrow_color: Color = ThemeColorType.PRIMARY
     disabled_arrow_color: Color = ThemeColorType.TEXT_DISABLED
     altered_color: Color = ThemeColorType.WARNING  # Segments and number once the value has been changed.
-
     is_selectable: bool = True
     is_edited: bool = field(default=False, init=False, repr=False)
 
@@ -833,12 +758,10 @@ class Selector(InteractiveElement):
 
     value: int = 0
     selections: tuple[str, ...] = ("",)
-
     selection_text: SelectionText = field(default_factory=SelectionText)
     left_arrow: LeftShiftArrow = field(default_factory=LeftShiftArrow)
     right_arrow: RightShiftArrow = field(default_factory=RightShiftArrow)
     gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the option's slot.
-
     number_text: Text = field(default_factory=NumberText)
     count_text: Text = field(default_factory=CountText)
     number_format: str = "{position}"  # str.format pattern given the 1-based ``position``.
@@ -846,9 +769,7 @@ class Selector(InteractiveElement):
     number_pw: int = 40  # The same width as a slider's number box.
     box_gap_pw: int = 6  # Between the selector box and the number box.
     use_number: bool = True
-
     action: Callable[[Any], bool] = field(default=lambda v: True)
-
     size: Measure = _CONTROL_SIZE
     padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
@@ -857,12 +778,10 @@ class Selector(InteractiveElement):
     border_thickness: int = 1
     shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
-
     selected_border_color: Color = ThemeColorType.PRIMARY
     selected_arrow_color: Color = ThemeColorType.PRIMARY
     altered_selection_color: Color = ThemeColorType.WARNING
     disabled_arrow_color: Color = ThemeColorType.TEXT_DISABLED
-
     is_edited: bool = field(default=False, init=False, repr=False)
 
     def get_number(self) -> tuple[str, str]:
@@ -924,7 +843,6 @@ class InputField(InteractiveElement):
     action: Callable[[Any], bool] = field(default=lambda v: True)  # Function called with new value when committed.
     validator: Callable[[str], bool] = field(default=lambda s: bool(re.fullmatch(ALPHANUMERIC_REGEX, s)))
     gap: Measure = (6.0, 0.0)  # Between the prompt and the value.
-
     size: Measure = _CONTROL_SIZE
     padding: Measure = _CONTROL_PADDING
     alignment: AlignmentType = AlignmentType.MIDLEFT
@@ -933,15 +851,13 @@ class InputField(InteractiveElement):
     border_thickness: int = 1
     shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
-
     selected_border_color: Color = ThemeColorType.PRIMARY
     invalid_text_color: Color = ThemeColorType.DANGER
     edited_text_color: Color = ThemeColorType.WARNING
-
     is_edited: bool = field(default=False, init=False, repr=False)
     is_open: bool = field(default=False, init=False, repr=False)
-    _open_buffer: str = field(default="", init=False, repr=False)  # Internal buffer for text being edited.
 
+    _open_buffer: str = field(default="", init=False, repr=False)  # Internal buffer for text being edited.
     _cursor_glyphs: ClassVar[tuple[str, ...]] = ("_", "")  # Cursor glyphs cycled while editing.
     _cursor_period: ClassVar[float] = 0.5  # Seconds each cursor glyph is shown.
     _cursor_epoch: float = field(default=0.0, init=False, repr=False)  # Time the blink cycle last restarted.

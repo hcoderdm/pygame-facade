@@ -7,7 +7,7 @@ from dataclasses import FrozenInstanceError, dataclass, replace
 import pygame
 import pytest
 
-from facade import DEFAULT_THEME, DebugRenderer, Element, Gap, Interface, Menu, MenuRenderer, NormalText, Theme, ThemeColorType, mix_rgba
+from facade import DEFAULT_THEME, DebugRenderer, Element, Gap, Interface, Menu, MenuRenderer, NormalText, ThemeColorType, mix_rgba
 
 SIZE = (200, 100)
 GREEN_THEME = replace(DEFAULT_THEME, background="#00FF00FF", text_normal="#0000FFFF", extras={"table": "#123456FF"})
