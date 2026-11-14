@@ -665,6 +665,29 @@ class Button(InteractiveElement):
 
 
 @dataclass(kw_only=True, repr=False)
+class PrimaryButton(Button):
+    """
+    The button for a screen's main action. Its label is cut out of a filled
+    bar inset inside the normal box, the way the toggle's chosen half is
+    filled, so it stands out while resting. Focus or the pointer lights the
+    bar and the border.
+    """
+
+    @dataclass(kw_only=True, repr=False)
+    class PrimaryButtonText(NormalText):
+        """The label, drawn in the input surface colour so it reads as cut out of the bar."""
+
+        text_color: Color = ThemeColorType.SURFACE_INPUT
+
+    label: Text = field(default_factory=PrimaryButtonText)
+
+    padding: Measure = (3.0, 3.0)  # Gap around the bar, the same on every side
+    fill_color: Color = ThemeColorType.FILL
+    selected_fill_color: Color = ThemeColorType.PRIMARY
+    selected_text_color: Color = ThemeColorType.SURFACE_INPUT  # Still cut out when the bar is lit
+
+
+@dataclass(kw_only=True, repr=False)
 class Toggle(InteractiveElement):
     """
     An on/off switch drawn as two halves, ``false_text`` and ``true_text``,

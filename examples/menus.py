@@ -36,6 +36,7 @@ from facade import (
     TRANSPARENT,
     ThemeColorType,
     NormalText,
+    PrimaryButton,
     SectionHeader,
     Selector,
     Slider,
@@ -54,6 +55,15 @@ def _title_button(text: str, action: Callable) -> Button:
         action=action,
         size=(296.0, 44.0),
         padding=(12.0, 12.0),
+    )
+
+
+def _title_primary_button(text: str, action: Callable) -> PrimaryButton:
+    """The title screen's main action, the same size as its other buttons."""
+    return PrimaryButton(
+        label=PrimaryButton.PrimaryButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
+        action=action,
+        size=(296.0, 44.0),
     )
 
 
@@ -106,7 +116,7 @@ class Start(Menu):
                 ],
             ),
             Gap(size=(0, 48)),
-            _title_button("Start Game", self.on_start),
+            _title_primary_button("Start Game", self.on_start),
             Gap(size=(0, 12)),
             _title_button("SETTINGS", self.on_settings),
             _title_button("ABOUT", self.on_about),

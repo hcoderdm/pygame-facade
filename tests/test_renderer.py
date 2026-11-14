@@ -8,7 +8,7 @@ import time
 
 import pygame
 
-from facade import DEFAULT_THEME, AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, NormalText, ProgressBar, Selector, Slider, Toggle
+from facade import DEFAULT_THEME, AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, NormalText, PrimaryButton, ProgressBar, Selector, Slider, Toggle
 from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
@@ -481,3 +481,32 @@ def test_cursor_in_an_empty_field_sits_on_the_hint_without_moving_it(monkeypatch
 
     assert text_rect("[ESC]").topleft == closed_hint.topleft
     assert text_rect("_").topleft == closed_hint.topleft
+
+def bar_margins(surface, box, color):
+    """Gaps between the inside of a border and the block of ``color`` within it, as left, right, top, bottom."""
+    xs = [px for px in range(box.left, box.right) if surface.get_at((px, box.centery)) == color]
+    ys = [py for py in range(box.top, box.bottom) if surface.get_at((box.centerx - 40, py)) == color]
+    return min(xs) - box.left, box.right - 1 - max(xs), min(ys) - box.top, box.bottom - 1 - max(ys)
+
+
+def test_primary_button_bar_has_an_even_gap():
+    button = PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="GO"))
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[Gap(is_selectable=True), button]))  # The gap holds the selection
+    surface = ui.render()
+    box = hit_rect_of(ui, button).inflate(-2, -2)  # Inside the border
+
+    assert bar_margins(surface, box, drawn(button.fill_color)) == (3, 3, 3, 3)
+    assert surface.get_at(box.topleft) == drawn(button.background_color)
+
+
+def test_lit_primary_button_lights_its_bar_and_border():
+    button = PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="GO"))
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[button]))
+    surface = ui.render()
+    rect = hit_rect_of(ui, button)
+
+    assert surface.get_at(rect.topleft) == drawn(button.selected_border_color)
+    assert bar_margins(surface, rect.inflate(-2, -2), drawn(button.selected_fill_color)) == (3, 3, 3, 3)
+

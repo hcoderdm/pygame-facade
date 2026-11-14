@@ -33,6 +33,7 @@ from .elements import (
     JustifyType,
     MeasureType,
     OverflowType,
+    PrimaryButton,
     ProgressBar,
     Paragraph,
     RotationType,
@@ -585,6 +586,18 @@ class MenuRenderer:
         if tree.selection_id == element.id:
             element = replace(element, border_color=element.selected_border_color, label=replace(element.label, text_color=element.selected_text_color))
         return _MenuTree.Node(element, children=[self._compose_node(element.label, tree, space)])
+
+    @_compose_content.register(PrimaryButton)
+    def _(self, element: PrimaryButton, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        is_lit = tree.selection_id == element.id
+        eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
+        label = replace(element.label, text_color=element.selected_text_color) if is_lit else element.label
+        # The bar fills the inner area, so the padding is the gap around it on every side
+        bar = HorizontalDivision(
+            elements=[label], size=(float(space.range_pw.start), float(space.range_ph.start)), alignment=AlignmentType.CENTER, gap=(0.0, 0.0),
+            background_color=element.selected_fill_color if is_lit else element.fill_color,
+        )
+        return _MenuTree.Node(eff_element, children=[self._compose_node(bar, tree, space)])
 
     @_compose_content.register(Toggle)
     def _(self, element: Toggle, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:

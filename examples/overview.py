@@ -26,6 +26,7 @@ from facade import (
     InputField,
     Interface,
     Menu,
+    PrimaryButton,
     ProgressBar,
     Selector,
     Slider,
@@ -100,6 +101,12 @@ def main() -> None:
             (Button(label=Button.ButtonText(text="START")), "idle", ""),
             (Button(label=Button.ButtonText(text="START")), "focused", ""),
             (Button(label=Button.ButtonText(text="START")), "pointer", "body"),
+            None,
+        ]),
+        ("PRIMARY BUTTON", None, [
+            (PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="START")), "idle", ""),
+            (PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="START")), "focused", ""),
+            (PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="START")), "pointer", "body"),
             None,
         ]),
         ("TOGGLE", None, [

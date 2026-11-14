@@ -5,7 +5,7 @@ Interface: events in, GUI surface out.
 import pygame
 import pytest
 
-from facade import Button, HorizontalDivision, InputField, Interface, Menu, Selector, Slider, Toggle
+from facade import Button, HorizontalDivision, InputField, Interface, Menu, PrimaryButton, Selector, Slider, Toggle
 from sample_menus import Overlay, Title
 
 SIZE = (800, 600)
@@ -418,3 +418,12 @@ def test_a_key_scrolls_back_to_the_keys_place_before_moving():
     rect = rect_of(ui, buttons[0])
     assert menu.get_selected_element() is buttons[0]  # Found, not moved
     assert menu._scroll <= rect.top and rect.bottom <= menu._scroll + 120
+
+def test_return_key_presses_a_primary_button(ui):
+    pressed = []
+    ui.push(Menu(root_elements=[PrimaryButton(action=lambda: pressed.append("start"))]))
+    ui.render()
+
+    assert ui.handle_event(key(pygame.K_RETURN)) is True
+    assert pressed == ["start"]
+
