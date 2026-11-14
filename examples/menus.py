@@ -115,21 +115,41 @@ class Start(Menu):
 
 @dataclass(kw_only=True)
 class Pause(Menu):
-    """In-game pause overlay menu."""
+    """
+    In-game pause menu: a small boxed panel in the middle of the window, with
+    the paused table only lightly dimmed around it. Leaving is set apart at
+    the bottom, under a section header that says where it goes.
+    """
 
     on_resume: Callable = field(default=lambda: None)
     on_restart: Callable = field(default=lambda: None)
     on_exit: Callable = field(default=lambda: None)
 
-    root_alignment: AlignmentType = AlignmentType.MIDTOP
-    root_background_alpha: int = 0xC0  # Dims the game behind the menu by three quarters
+    root_alignment: AlignmentType = AlignmentType.CENTER
+    root_background_alpha: int = 0x60  # Dims the table a little; the panel itself is nearly solid
 
     def __post_init__(self):
-        self.root_elements = [
-            Button(label=Button.ButtonText(text="RESUME"), action=self.on_resume),
-            Button(label=Button.ButtonText(text="RESTART"), action=self.on_restart),
-            Button(label=Button.ButtonText(text="EXIT"), action=self.on_exit),
-        ]
+        title_size = NATIVE_FONT_SIZE * 2
+        # One font pixel of shadow per 14px of type keeps it on the font's grid
+        shadow_offset = title_size / NATIVE_FONT_SIZE
+        panel = VerticalDivision(
+            padding=(18.0, 18.0),
+            gap=(0.0, 8.0),
+            background_color=ThemeColorType.BACKGROUND,
+            background_alpha=0xE0,
+            border_color=ThemeColorType.BORDER_DISPLAY,
+            border_thickness=1,
+            elements=[
+                TitleText(text="PAUSED", font_size=title_size, shadow_color=ThemeColorType.HEADING_SHADOW, shadow_offset=(shadow_offset, shadow_offset)),
+                Gap(size=(0, 6)),
+                Button(label=Button.ButtonText(text="RESUME"), action=self.on_resume),
+                Button(label=Button.ButtonText(text="RESTART"), action=self.on_restart),
+                Gap(size=(0, 6)),
+                SectionHeader(label=SectionHeader.HeaderText(text="TO TITLE"), size=(148.0, 0.0)),  # As wide as the buttons
+                PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="EXIT"), action=self.on_exit),
+            ],
+        )
+        self.root_elements = [panel]
         super().__post_init__()
 
 
