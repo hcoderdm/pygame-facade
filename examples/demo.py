@@ -56,7 +56,7 @@ def main() -> int:
     # A renderer with debugging aids that the keys below switch on.
     debug = DebugRenderer(MenuRenderer(TABLE_FELT))
     interface.renderer = debug
-    # Register the bundled pixel font; Text elements default to "editundo.ttf".
+    # Register the bundled pixel font. Text elements default to "editundo.ttf".
     interface.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
 
     debug_keybinds = {

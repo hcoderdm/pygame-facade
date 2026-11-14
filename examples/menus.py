@@ -107,7 +107,7 @@ class Pause(Menu):
     on_exit: Callable = field(default=lambda: None)
 
     root_alignment: AlignmentType = AlignmentType.CENTER
-    root_background_alpha: int = 0x60  # Dims the table a little; the panel itself is nearly solid.
+    root_background_alpha: int = 0x60  # Dims the table a little. The panel itself is nearly solid.
 
     def __post_init__(self):
         title_size = NATIVE_FONT_SIZE * 2
@@ -205,7 +205,7 @@ class Settings(Menu):
                 background_color=ThemeColorType.SURFACE_DISPLAY,
                 border_color=ThemeColorType.BORDER_DISPLAY,
                 border_thickness=1,
-                shadow_color=TRANSPARENT,  # Display boxes sit flat; only inputs cast a shadow.
+                shadow_color=TRANSPARENT,  # Display boxes sit flat. Only inputs cast a shadow.
             )
 
         def _build_editor(name: str, value: Any) -> Element:
@@ -313,7 +313,7 @@ class About(Menu):
 
         heading = HeadingTwoText(text="About", text_decorations=TextDecorationType.UNDERLINE)
         # Shadows hang below a part's layout box, so each spacer adds the shadow of the part above it.
-        # The heading's layout box already takes in its underline; its shadow drops below that.
+        # The heading's layout box already takes in its underline. Its shadow drops below that.
         after_heading = Gap(size=(0.0, _SECTION_GAP_PH + heading.shadow_offset[1]))
         after_panel = (0.0, _SECTION_GAP_PH + _PANEL_SHADOW_PH)
         self.root_elements = [

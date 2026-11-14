@@ -348,7 +348,7 @@ def test_261113211043_d52b7d66(interface, monkeypatch):
 
     interface.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_x, mod=0, unicode="x", scancode=0))
     interface.handle_event(typed("x"))
-    interface.handle_event(typed("x"))  # The system's own repeat is ignored; the interface times repeats.
+    interface.handle_event(typed("x"))  # The system's own repeat is ignored. The interface times repeats.
     clock[0] += interface.repeat_delay
     interface.render()
     assert field.get_field() == "ABXX"

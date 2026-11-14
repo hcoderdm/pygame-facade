@@ -109,7 +109,7 @@ def main() -> int:
         field.close()
         return field
 
-    # Each row is a name, an optional note, and (element, state, part) per column; None leaves a cell empty.
+    # Each row is a name, an optional note, and (element, state, part) per column. None leaves a cell empty.
     rows = [
         ("BUTTON", None, [
             (Button(label=Button.ButtonText(text="START")), "idle", ""),

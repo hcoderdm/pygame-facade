@@ -33,7 +33,7 @@ CYAN: RGBA = "#00FFFFFF"
 WHITE: RGBA = "#FFFFFFFF"
 
 # The bundled pixel font draws one font pixel per screen pixel at 14px, and stays
-# crisp only at whole multiples of it; other sizes give uneven strokes.
+# crisp only at whole multiples of it. Other sizes give uneven strokes.
 NATIVE_FONT_SIZE: int = 14
 
 # Every input shares one box: 8px capitals with 6px of padding and a 1px border on each side.
@@ -188,7 +188,7 @@ class Element(ABC):
     # Incremented whenever an element's state changes.
     _render_version: ClassVar[int] = 0
 
-    # Element dataclasses are declared with repr=False; otherwise @dataclass
+    # Element dataclasses are declared with repr=False. Otherwise @dataclass
     # would generate a field-by-field __repr__ for every subclass, replacing
     # this one and printing whole element trees.
     def __repr__(self) -> str:
@@ -488,6 +488,22 @@ class SectionHeader(Element):
 
 
 @dataclass(kw_only=True, repr=False)
+class SegmentStrip(Element):
+    """The segments of a ``ProgressBar`` or ``Slider``, built by the renderer while composing."""
+
+    count: int
+    filled: int
+    segment_pw: int
+    segment_ph: int
+    gap_pw: int
+    fill_color: Color
+    empty_color: Color
+
+    background_color: Color = TRANSPARENT
+    is_selectable: bool = False
+
+
+@dataclass(kw_only=True, repr=False)
 class ProgressBar(Element):
     """
     A read-only row of segments filled in proportion to ``value`` within
@@ -501,7 +517,7 @@ class ProgressBar(Element):
     class NumberText(NormalText):
         """The number in the box beside the bar."""
 
-    value: float = 0.0  # Current value; values outside the range are clamped when drawn.
+    value: float = 0.0  # Current value. Values outside the range are clamped when drawn.
     range: tuple[float, float] = (0.0, 1.0)  # Values drawn as an empty and a full bar.
     segments: int = 10  # The segments share whatever width the bar box has.
     segment_gap_pw: int = 2
@@ -519,7 +535,7 @@ class ProgressBar(Element):
     background_color: Color = ThemeColorType.SURFACE_DISPLAY
     border_color: Color = ThemeColorType.BORDER_DISPLAY
     border_thickness: int = 1
-    shadow_color: Color = TRANSPARENT  # Display boxes sit flat; only inputs cast a shadow.
+    shadow_color: Color = TRANSPARENT  # Display boxes sit flat. Only inputs cast a shadow.
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
     is_selectable: bool = False
 

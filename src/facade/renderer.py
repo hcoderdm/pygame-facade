@@ -38,6 +38,7 @@ from .elements import (
     Paragraph,
     RotationType,
     SectionHeader,
+    SegmentStrip,
     Selector,
     Slider,
     Text,
@@ -240,25 +241,6 @@ class ShadowCache(SurfaceCache):
 # -----------------------------------------------------------------------------
 
 
-@dataclass(kw_only=True, repr=False)
-class SegmentStrip(Element):
-    """The segments of a ``ProgressBar`` or ``Slider``, built by the renderer while composing."""
-
-    count: int
-    filled: int
-    segment_pw: int
-    segment_ph: int
-    gap_pw: int
-    fill_color: Color
-    empty_color: Color
-
-    background_color: Color = TRANSPARENT
-    is_selectable: bool = False
-
-
-# -----------------------------------------------------------------------------
-
-
 @dataclass(eq=False)
 class MenuTree:
     """One menu composed at one window size and render version, and everything made from it."""
@@ -276,7 +258,7 @@ class MenuTree:
         element: Element
         content_surf: pygame.Surface | None = None
         children: list[MenuTree.Node] = field(default_factory=list)
-        content_rect: pygame.Rect | None = None  # Part of content_surf that layout uses; the whole surface when None.
+        content_rect: pygame.Rect | None = None  # Part of content_surf that layout uses. The whole surface when None.
 
         hit_target: Element | None = None
         box_surf: pygame.Surface | None = None
@@ -364,7 +346,7 @@ class MenuRenderer:
     def theme(self, theme: Theme) -> None:
         if theme != self._theme:
             self._theme = theme
-            # The caches key on drawn colours, so they stay valid; only the composed tree is out of date.
+            # The caches key on drawn colours, so they stay valid. Only the composed tree is out of date.
             self._menu_tree = None
 
     def render(self, menu: Menu, size: tuple[int, int]) -> pygame.Surface:
@@ -385,7 +367,7 @@ class MenuRenderer:
         if not element.is_visible:
             return MenuTree.Node(element, hit_target=element)
         if isinstance(element, ProgressBar):
-            # A bar is two ordinary boxes side by side; clicks on either still reach the bar itself.
+            # A bar is two ordinary boxes side by side. Clicks on either still reach the bar itself.
             node = self._compose_node(self._make_bar_row(element, tree, space), tree, space)
             node.hit_target = element
             return node
@@ -452,6 +434,8 @@ class MenuRenderer:
 
     @singledispatchmethod
     def _compose_content(self, element: Element, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
+        # Default implementation for composing content of an element into a MenuTree.Node.
+        # This method should be overridden for specific element types to provide custom content composition logic.
         return MenuTree.Node(element)
 
     @_compose_content.register(Division)
@@ -538,40 +522,40 @@ class MenuRenderer:
         row_pw = self._get_block_pw(space)
         rows = []
         for role, name in element.credits:
-            role_text = replace(element.role_text, text=role)
-            name_text = replace(element.name_text, text=name)
-            free_pw = row_pw - self._measure_text(role_text) - self._measure_text(name_text) - 2 * element.leader_gap_pw
+            eff_role_text = replace(element.role_text, text=role)
+            eff_name_text = replace(element.name_text, text=name)
+            free_pw = row_pw - self._measure_text(eff_role_text) - self._measure_text(eff_name_text) - 2 * element.leader_gap_pw
             count = max(0, (free_pw + element.dot_gap_pw) // (element.dot_pw + element.dot_gap_pw))
             leader_pw = count * (element.dot_pw + element.dot_gap_pw) - element.dot_gap_pw if count else 0
             # Leftover pixels go before the leader, so every leader ends the same distance from its name.
-            parts: list[Element] = [role_text, Gap(size=(element.leader_gap_pw + free_pw - leader_pw, 0.0))]
+            parts: list[Element] = [eff_role_text, Gap(size=(element.leader_gap_pw + free_pw - leader_pw, 0.0))]
             if count:
                 dots = SegmentStrip(
                     count=count, filled=count, segment_pw=element.dot_pw, segment_ph=element.dot_pw,
                     gap_pw=element.dot_gap_pw, fill_color=element.leader_color, empty_color=element.leader_color,
                 )
                 # Dropped to the baseline so the dots run under the text, not through it.
-                baseline_py = max(0, self._measure_cap_ph(role_text) - element.dot_pw)
+                baseline_py = max(0, self._measure_cap_ph(eff_role_text) - element.dot_pw)
                 parts += [
                     VerticalDivision(elements=[Gap(size=(0.0, baseline_py)), dots], gap=(0.0, 0.0), justify=JustifyType.START),
                     Gap(size=(element.leader_gap_pw, 0.0)),
                 ]
-            parts.append(name_text)
+            parts.append(eff_name_text)
             rows.append(HorizontalDivision(elements=parts, gap=(0.0, 0.0), justify=JustifyType.START))
         body = VerticalDivision(elements=rows, gap=(0.0, element.row_gap_ph), justify=JustifyType.START)
         return MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
 
     @_compose_content.register(SectionHeader)
     def _(self, element: SectionHeader, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
-        label = replace(element.label, is_wrappable=False)
-        rule_pw = max(0, self._get_block_pw(space) - self._measure_text(label) - element.rule_gap_pw)
-        # Centred on the label's capitals; an odd leftover puts the extra pixel below.
-        rule_py = max(0, (self._measure_cap_ph(label) - element.rule_ph) // 2)
+        eff_label = replace(element.label, is_wrappable=False)
+        rule_pw = max(0, self._get_block_pw(space) - self._measure_text(eff_label) - element.rule_gap_pw)
+        # Centred on the label's capitals. An odd leftover puts the extra pixel below.
+        rule_py = max(0, (self._measure_cap_ph(eff_label) - element.rule_ph) // 2)
         rule = VerticalDivision(
             elements=[Gap(size=(0.0, rule_py)), Gap(size=(rule_pw, element.rule_ph), background_color=element.rule_color)],
             gap=(0.0, 0.0), justify=JustifyType.START,
         )
-        row = HorizontalDivision(elements=[label, rule], gap=(element.rule_gap_pw, 0.0), justify=JustifyType.START)
+        row = HorizontalDivision(elements=[eff_label, rule], gap=(element.rule_gap_pw, 0.0), justify=JustifyType.START)
         return MenuTree.Node(element, children=[self._compose_node(row, tree, space)])
 
     @_compose_content.register(SegmentStrip)
@@ -585,18 +569,18 @@ class MenuRenderer:
 
     @_compose_content.register(Button)
     def _(self, element: Button, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
-        if tree.selection_id == element.id:
-            element = replace(element, border_color=element.selected_border_color, label=replace(element.label, text_color=element.selected_text_color))
-        return MenuTree.Node(element, children=[self._compose_node(element.label, tree, space)])
+        is_lit = tree.selection_id == element.id
+        eff_element = replace(element, border_color=element.selected_border_color, label=replace(element.label, text_color=element.selected_text_color)) if is_lit else element
+        return MenuTree.Node(eff_element, children=[self._compose_node(eff_element.label, tree, space)])
 
     @_compose_content.register(PrimaryButton)
     def _(self, element: PrimaryButton, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         is_lit = tree.selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
-        label = replace(element.label, text_color=element.selected_text_color) if is_lit else element.label
+        eff_label = replace(element.label, text_color=element.selected_text_color) if is_lit else element.label
         # The bar fills the inner area, so the padding is the gap around it on every side.
         bar = HorizontalDivision(
-            elements=[label], size=(float(space.range_pw.start), float(space.range_ph.start)), alignment=AlignmentType.CENTER, gap=(0.0, 0.0),
+            elements=[eff_label], size=(float(space.range_pw.start), float(space.range_ph.start)), alignment=AlignmentType.CENTER, gap=(0.0, 0.0),
             background_color=element.selected_fill_color if is_lit else element.fill_color,
         )
         return MenuTree.Node(eff_element, children=[self._compose_node(bar, tree, space)])
@@ -627,9 +611,9 @@ class MenuRenderer:
         is_lit = tree.selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
 
-        selection_text = replace(element.selection_text, text=element.get_selection())
+        eff_selection_text = replace(element.selection_text, text=element.get_selection())
         if element.is_edited:
-            selection_text = replace(selection_text, text_color=element.altered_selection_color)
+            eff_selection_text = replace(eff_selection_text, text_color=element.altered_selection_color)
         left_zone = self._make_arrow_zone(element, element.left_arrow, "left", element.value == 0, is_lit, tree)
         right_zone = self._make_arrow_zone(element, element.right_arrow, "right", element.value == len(element.selections) - 1, is_lit, tree)
 
@@ -637,7 +621,7 @@ class MenuRenderer:
         gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
         zones_pw = self._measure_arrow_zone(element.left_arrow) + self._measure_arrow_zone(element.right_arrow)
         slot_pw = max(0, space.range_pw.start - zones_pw - 2 * gap_pw)
-        slot = HorizontalDivision(elements=[selection_text], size=(slot_pw, 0.0), alignment=AlignmentType.CENTER, gap=(0.0, 0.0))
+        slot = HorizontalDivision(elements=[eff_selection_text], size=(slot_pw, 0.0), alignment=AlignmentType.CENTER, gap=(0.0, 0.0))
         row = HorizontalDivision(elements=[left_zone, slot, right_zone], gap=(gap_pw, 0.0))
         return MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
 
@@ -649,22 +633,22 @@ class MenuRenderer:
 
         glyph = element.get_cursor_glyph()
         tree.rendered_glyphs.append((element, glyph))
-        value_text = replace(element.value, text=element.get_field() + glyph)
+        eff_value_text = replace(element.value, text=element.get_field() + glyph)
         if not element.authenticate():
-            value_text = replace(value_text, text_color=element.invalid_text_color)
+            eff_value_text = replace(eff_value_text, text_color=element.invalid_text_color)
         elif element.is_altered():
-            value_text = replace(value_text, text_color=element.edited_text_color)
+            eff_value_text = replace(eff_value_text, text_color=element.edited_text_color)
 
         parts: list[Element] = [element.prompt]
         if element.get_field():
-            parts.append(value_text)
+            parts.append(eff_value_text)
         elif glyph:
             # The cursor is drawn over the start of the hint rather than after it, so the hint never moves. It comes
-            # after the hint so it draws on top, shifted back by the hint's width; with no size and OVERFLOW it
+            # after the hint so it draws on top, shifted back by the hint's width. With no size and OVERFLOW it
             # takes no room, and START keeps it on the hint's top row.
             hint_pw = self._measure_text(element.hint)
-            cursor = replace(value_text, size=(0.0, 0.0), overflow=OverflowType.OVERFLOW, justify=JustifyType.START, offset=(-float(hint_pw), 0.0))
-            parts.append(HorizontalDivision(elements=[element.hint, cursor], gap=(0.0, 0.0)))
+            eff_cursor = replace(eff_value_text, size=(0.0, 0.0), overflow=OverflowType.OVERFLOW, justify=JustifyType.START, offset=(-float(hint_pw), 0.0))
+            parts.append(HorizontalDivision(elements=[element.hint, eff_cursor], gap=(0.0, 0.0)))
         else:
             parts.append(element.hint)
         gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
@@ -676,18 +660,18 @@ class MenuRenderer:
     def _make_selector_row(self, element: Selector, space: MenuTree.Space) -> HorizontalDivision:
         # The selector box and its number box share the width the selector's ``size`` gives.
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
-        # The selector box is a copy without its number, so it is drawn as before; the row holding both is
+        # The selector box is a copy without its number, so it is drawn as before. The row holding both is
         # what is selected and clicked, and the copy keeps the id so it still lights with the real selector.
-        selector_box = replace(
+        eff_selector_box = replace(
             element, size=(float(size_pw - element.box_gap_pw - element.number_pw), float(size_ph)), size_measure=MeasureType.ABSOLUTE,
             use_number=False, is_selectable=False, offset=(0.0, 0.0), margin=(0.0, 0.0), is_fixed=False,
         )
         position, count = element.get_number()
-        number_text = replace(element.number_text, text=position)
+        eff_number_text = replace(element.number_text, text=position)
         if element.is_edited:
-            number_text = replace(number_text, text_color=element.altered_selection_color)
+            eff_number_text = replace(eff_number_text, text_color=element.altered_selection_color)
         # The layout trims the spacing after each piece of text, so 1px between them spaces them like one word.
-        number_row = HorizontalDivision(elements=[number_text, replace(element.count_text, text=count)], gap=(1.0, 0.0))
+        number_row = HorizontalDivision(elements=[eff_number_text, replace(element.count_text, text=count)], gap=(1.0, 0.0))
         number_box = HorizontalDivision(
             elements=[number_row], size=(float(element.number_pw), float(size_ph)), padding=element.padding, padding_measure=element.padding_measure,
             gap=(0.0, 0.0), alignment=AlignmentType.CENTER,
@@ -697,7 +681,7 @@ class MenuRenderer:
             shadow_offset=element.shadow_offset, shadow_offset_measure=element.shadow_offset_measure,
         )
         return HorizontalDivision(
-            elements=[selector_box, number_box], gap=(float(element.box_gap_pw), 0.0), justify=element.justify, alignment=element.alignment,
+            elements=[eff_selector_box, number_box], gap=(float(element.box_gap_pw), 0.0), justify=element.justify, alignment=element.alignment,
             offset=element.offset, offset_measure=element.offset_measure, margin=element.margin, margin_measure=element.margin_measure,
             rotation=element.rotation, is_fixed=element.is_fixed, is_selectable=element.is_selectable,
         )
@@ -741,10 +725,10 @@ class MenuRenderer:
         boxes: list[Element] = [box(parts, bar_pw, bar_border_color, gap_pw)]
 
         if element.use_number:
-            number_text = replace(element.number_text, text=element.get_number(value))
+            eff_number_text = replace(element.number_text, text=element.get_number(value))
             if isinstance(element, Slider) and is_altered:
-                number_text = replace(number_text, text_color=element.altered_color)
-            boxes.append(box([number_text], element.number_pw, element.border_color))
+                eff_number_text = replace(eff_number_text, text_color=element.altered_color)
+            boxes.append(box([eff_number_text], element.number_pw, element.border_color))
 
         return HorizontalDivision(
             elements=boxes, gap=(element.box_gap_pw, 0.0), justify=element.justify, alignment=element.alignment,
@@ -754,15 +738,15 @@ class MenuRenderer:
 
     @staticmethod
     def _get_block_pw(space: MenuTree.Space) -> int:
-        # A set width wins; with none, text blocks fill all the room they are given.
+        # A set width wins. With none, text blocks fill all the room they are given.
         return space.range_pw.start or space.range_pw.stop
 
     def _make_paragraph(self, element: TextBlock, paragraph: Paragraph, wrap_pw: int) -> VerticalDivision:
         spans = [paragraph] if isinstance(paragraph, str) else paragraph
         words = [
-            (style, word)
+            (eff_style, word)
             for span in spans
-            for style in [replace(element.body_text, text="") if isinstance(span, str) else replace(span, text="")]
+            for eff_style in [replace(element.body_text, text="") if isinstance(span, str) else replace(span, text="")]
             for word in (span if isinstance(span, str) else span.text).split()
         ]
 
@@ -770,13 +754,13 @@ class MenuRenderer:
         lines: list[list[tuple[Text, str]]] = []
         line: list[tuple[Text, str]] = []
         line_pw = 0
-        for style, word in words:
-            word_pw = self._measure_text(replace(style, text=word))
-            next_pw = line_pw + self._measure_space_pw(style) + word_pw if line else word_pw
+        for eff_style, word in words:
+            word_pw = self._measure_text(replace(eff_style, text=word))
+            next_pw = line_pw + self._measure_space_pw(eff_style) + word_pw if line else word_pw
             if line and next_pw > wrap_pw:
                 lines.append(line)
                 line, next_pw = [], word_pw
-            line.append((style, word))
+            line.append((eff_style, word))
             line_pw = next_pw
         if line:
             lines.append(line)
@@ -785,16 +769,16 @@ class MenuRenderer:
         for line in lines:
             # Neighbouring words in one style share a Text, so a line is a few surfaces rather than one per word.
             runs: list[tuple[Text, list[str]]] = []
-            for style, word in line:
-                if runs and runs[-1][0] == style:
+            for eff_style, word in line:
+                if runs and runs[-1][0] == eff_style:
                     runs[-1][1].append(word)
                 else:
-                    runs.append((style, [word]))
+                    runs.append((eff_style, [word]))
             parts: list[Element] = []
-            for idx, (style, run_words) in enumerate(runs):
+            for idx, (eff_style, run_words) in enumerate(runs):
                 if idx:
-                    parts.append(Gap(size=(self._measure_space_pw(style), 0.0)))
-                parts.append(replace(style, text=" ".join(run_words), is_wrappable=False, justify=JustifyType.START))
+                    parts.append(Gap(size=(self._measure_space_pw(eff_style), 0.0)))
+                parts.append(replace(eff_style, text=" ".join(run_words), is_wrappable=False, justify=JustifyType.START))
             rows.append(HorizontalDivision(elements=parts, gap=(0.0, 0.0), justify=JustifyType.START))
         return VerticalDivision(elements=rows, gap=(0.0, element.line_gap_ph), justify=JustifyType.START)
 
@@ -812,7 +796,7 @@ class MenuRenderer:
         return self._text_cache.get_surf(text, 0, self._theme)[1].width
 
     def _make_arrow_zone(self, element: Selector | Slider, arrow: Text, side: str, is_disabled: bool, is_lit: bool, tree: MenuTree) -> HorizontalDivision:
-        # Under the pointer only the arrow on its side lights; with the keys both do.
+        # Under the pointer only the arrow on its side lights. With the keys both do.
         if is_disabled:
             color = element.disabled_arrow_color
         elif is_lit and tree.pointer_part in (None, side):

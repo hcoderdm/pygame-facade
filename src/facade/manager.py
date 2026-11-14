@@ -296,7 +296,7 @@ def _move_focus(menu: Menu, renderer: MenuRenderer | DebugRenderer, direction: s
 
 
 def _adjust(element: object, step: int) -> bool:
-    # Left and Right change a value at once; controls without one let the arrows move focus instead.
+    # Left and Right change a value at once. Controls without one let the arrows move focus instead.
     if isinstance(element, Toggle):
         element.set_value(step > 0)
         return True
@@ -330,7 +330,7 @@ def _activate_part(menu: Menu, renderer: MenuRenderer | DebugRenderer, element: 
 
 
 def _handle_typing_key(field: InputField, event: pygame.event.Event) -> bool:
-    # Keys that edit the field; anything else saves or cancels it and is then handled as navigation.
+    # Keys that edit the field. Anything else saves or cancels it and is then handled as navigation.
     key = event.key
     if key in _ACTIVATE_KEYS:
         field.close()  # An invalid buffer stays open so it can be fixed.
@@ -340,4 +340,4 @@ def _handle_typing_key(field: InputField, event: pygame.event.Event) -> bool:
         field.truncate()
     elif key in (pygame.K_UP, pygame.K_DOWN, pygame.K_TAB):
         return False
-    return True  # Character keys arrive as text input; their key presses are still the menu's.
+    return True  # Character keys arrive as text input. Their key presses are still the menu's.

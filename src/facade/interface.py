@@ -139,14 +139,14 @@ class Interface:
         held = self._held_key
         if event.type == pygame.KEYDOWN:
             if held is not None and held.key == event.key:
-                return True  # A repeat from pygame itself, when the game turned those on; the interface times its own.
+                return True  # A repeat from pygame itself, when the game turned those on. The interface times its own.
             text = event.unicode if self._is_typing(menu) and event.unicode and event.unicode.isprintable() else ""
             is_used = handler(menu, event)
             is_repeating = is_used and (event.key in _REPEAT_KEYS or bool(text))
             self._held_key = HeldKey(event.key, event.mod, text, time.monotonic() + self.repeat_delay) if is_repeating else None
             return is_used
         if event.type == pygame.TEXTINPUT and held is not None and held.text and event.text == held.text:
-            # The system repeats text on its own schedule too; only the first press's text is used.
+            # The system repeats text on its own schedule too. Only the first press's text is used.
             if held.is_text_seen:
                 return True
             held.is_text_seen = True
