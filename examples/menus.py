@@ -144,10 +144,19 @@ class Settings(Menu):
     Edits are written straight back with ``setattr``. Enum values are edited
     with a Selector, bool values with a Toggle, floats from 0 to 1 with a
     Slider, and other int, float and str values with an InputField.
+
+    Laid out like ``About``: a centred heading, one box per section and a
+    centred button, evenly spaced. ``sections`` maps each box's title to the
+    names it holds, in order; names left out go in a last "Other" box, and
+    with no sections every setting shares one untitled box.
     """
 
     settings: Any  # Object whose UPPERCASE attributes are edited in place
+    sections: dict[str, list[str]] = field(default_factory=dict)
     on_return: Callable = field(default=lambda: None)
+
+    root_alignment: AlignmentType = AlignmentType.CENTER
+    root_gap: Measure = (0.0, 0.0)  # Every gap is a Gap below, so the heading's can differ
 
     def __post_init__(self):
         config = self.settings
@@ -224,28 +233,35 @@ class Settings(Menu):
                 action=_input_action(name, converter),
             )
 
-        dynamic_components = [
-            HorizontalDivision(
+        rows = {
+            name: HorizontalDivision(
                 justify=JustifyType.START,
                 gap=(6.0, 0.0),
                 elements=[_label(name), _build_editor(name, value)],
             )
             for name, value in vars(config).items()
             if name.isupper()
-        ]
+        }
 
-        self.root_elements = [
-            HeadingTwoText(text="Settings", justify=JustifyType.START, text_decorations=TextDecorationType.UNDERLINE),
-            NormalText(text="Adjust game values.", justify=JustifyType.START, is_wrappable=True),
-            Gap(size=(0.0, 4.0)),
-            *dynamic_components,
-            Gap(size=(0.0, 4.0)),
-            Button(
-                label=Button.ButtonText(text="RETURN"),
-                action=self.on_return,
-                justify=JustifyType.START,
-            ),
+        groups: list[tuple[str | None, list[str]]] = [
+            (title, [name for name in names if name in rows]) for title, names in self.sections.items()
         ]
+        placed = {name for _, names in groups for name in names}
+        leftover = [name for name in rows if name not in placed]
+        if leftover:
+            groups.append(("Other" if groups else None, leftover))
+
+        heading = HeadingTwoText(text="Settings", text_decorations=TextDecorationType.UNDERLINE)
+        # As on About, each spacer adds the shadow of the part above it so the visible space is even
+        elements: list[Element] = [heading, Gap(size=(0.0, _SECTION_GAP_PH + heading.shadow_offset[1]))]
+        for title, names in groups:
+            if not names:
+                continue
+            header = [SectionHeader(label=SectionHeader.HeaderText(text=title), size=(_COLUMN_PW, 0.0), justify=JustifyType.START)] if title else []
+            elements += [_panel([*header, *[rows[name] for name in names]]), Gap(size=(0.0, _SECTION_GAP_PH + _PANEL_SHADOW_PH))]
+        elements.append(Button(label=Button.ButtonText(text="RETURN"), action=self.on_return))
+
+        self.root_elements = elements
         super().__post_init__()
 
 

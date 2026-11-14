@@ -18,6 +18,15 @@ from facade import DebugRenderer, Interface, MenuRenderer
 from menus import About, Pause, Settings, Start  # examples/menus.py, this game's screens
 
 
+# The Settings menu's boxes, in the order settings.py lists them
+SETTINGS_SECTIONS = {
+    "Display": ["FPS"],
+    "Audio": ["MASTER_VOLUME", "MUSIC_VOLUME", "SFX_VOLUME", "MUTE_AUDIO"],
+    "Gameplay": ["PLAYER_NAME", "DIFFICULTY", "INVERT_Y_AXIS"],
+    "Debug": ["DEBUG_MODE", "SHOW_FPS", "SHOW_HITBOXES"],
+}
+
+
 def main() -> None:
     pygame.init()
     screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
@@ -49,7 +58,7 @@ def main() -> None:
         interface.clear()
         interface.push(Start)
 
-    interface.add_menu(Settings(settings=settings, on_return=interface.pop))
+    interface.add_menu(Settings(settings=settings, sections=SETTINGS_SECTIONS, on_return=interface.pop))
     interface.add_menu(About(on_return=interface.pop))
     interface.add_menu(Pause(on_resume=interface.pop, on_restart=interface.pop, on_exit=back_to_title))
     interface.push(
