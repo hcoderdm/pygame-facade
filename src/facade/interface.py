@@ -39,6 +39,7 @@ from .manager import (
 )
 from .menus import Menu
 from .renderer import DebugRenderer, MenuRenderer
+from .theme import DEFAULT_THEME, Theme
 
 
 _REPEAT_KEYS = (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_BACKSPACE, pygame.K_DELETE)
@@ -63,13 +64,15 @@ class Interface:
     ``False`` for every event, leaving input to the game.
     """
 
-    def __init__(self, size: tuple[int, int], use_hand_cursor: bool = True, repeat_delay: float = 0.4, repeat_interval: float = 0.05) -> None:
+    def __init__(self, size: tuple[int, int], theme: Theme = DEFAULT_THEME, use_hand_cursor: bool = True, repeat_delay: float = 0.4, repeat_interval: float = 0.05) -> None:
         """
         ``size`` is the window size in pixels. With ``use_hand_cursor`` the system
         cursor shows a hand over a selectable element, a text beam over an
         input field, and an arrow everywhere else. A held arrow key, Backspace,
         Delete or typed character repeats after ``repeat_delay`` seconds, then
         every ``repeat_interval`` seconds; repeats are applied in ``render``.
+        ``theme`` gives the colours that elements' ``ThemeColorType`` roles are
+        drawn in.
         """
         self.size: tuple[int, int] = (int(size[0]), int(size[1]))
         self.use_hand_cursor: bool = use_hand_cursor
@@ -77,7 +80,7 @@ class Interface:
         self.repeat_interval: float = repeat_interval
         self._held_key: _HeldKey | None = None
         self.manager: MenuManager = MenuManager()
-        self.renderer: MenuRenderer | DebugRenderer = MenuRenderer()
+        self.renderer: MenuRenderer | DebugRenderer = MenuRenderer(theme)
 
         self._event_handlers: dict[int, Callable[[Menu, pygame.event.Event], bool]] = {
             pygame.MOUSEMOTION: lambda menu, event: handle_menu_mousemotion(menu, self.renderer, event, use_hand_cursor=self.use_hand_cursor),
@@ -99,6 +102,15 @@ class Interface:
     def images(self) -> ImageManager:
         """Image registry used for ``Image.image_path`` lookups."""
         return self.renderer.images
+
+    @property
+    def theme(self) -> Theme:
+        """The colours menus are drawn in. Setting a different theme redraws the open menu with it."""
+        return self.renderer.theme
+
+    @theme.setter
+    def theme(self, theme: Theme) -> None:
+        self.renderer.theme = theme
 
     # -------------------------------------------------------------------------
 

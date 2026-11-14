@@ -8,7 +8,7 @@ import time
 
 import pygame
 
-from facade import AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, NormalText, ProgressBar, Selector, Slider, Toggle
+from facade import DEFAULT_THEME, AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, NormalText, ProgressBar, Selector, Slider, Toggle
 from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
@@ -109,7 +109,7 @@ def test_opaque_menu_is_returned_without_per_pixel_alpha():
 
     assert surface.get_size() == SIZE
     assert not surface.get_flags() & pygame.SRCALPHA
-    assert surface.get_at((0, 0)) == pygame.Color("#0C0E14FF")  # Menu's default background
+    assert surface.get_at((0, 0)) == drawn(DEFAULT_THEME.background)  # Menu's default background
 
 
 def test_menu_smaller_than_window_keeps_alpha():
@@ -129,6 +129,11 @@ def test_menu_smaller_than_window_keeps_alpha():
 @dataclass(kw_only=True)
 class Panel(Menu):
     """A bare menu for the layout rules below."""
+
+
+def drawn(color):
+    """The pixel colour a colour field draws as under the default theme, which these tests use."""
+    return pygame.Color(DEFAULT_THEME.get_rgba(color))
 
 
 def hit_rect_of(ui, element):
@@ -220,8 +225,8 @@ def test_selected_slider_outlines_only_its_bar():
     surface = ui.render()
     rect = hit_rect_of(ui, slider)
 
-    assert surface.get_at((rect.left, rect.centery)) == pygame.Color(slider.selected_border_color)
-    assert surface.get_at((rect.right - 1, rect.centery)) == pygame.Color(slider.border_color)
+    assert surface.get_at((rect.left, rect.centery)) == drawn(slider.selected_border_color)
+    assert surface.get_at((rect.right - 1, rect.centery)) == drawn(slider.border_color)
 
 
 def test_clicks_on_a_bar_reach_the_slider():
@@ -242,8 +247,8 @@ def test_toggle_fills_the_half_for_its_value():
     rect = hit_rect_of(ui, toggle)
     inset = 1 + int(toggle.padding[0])
 
-    assert surface.get_at((rect.right - 1 - inset, rect.centery)) == pygame.Color(toggle.fill_color)
-    assert surface.get_at((rect.left + inset, rect.centery)) == pygame.Color(toggle.background_color)
+    assert surface.get_at((rect.right - 1 - inset, rect.centery)) == drawn(toggle.fill_color)
+    assert surface.get_at((rect.left + inset, rect.centery)) == drawn(toggle.background_color)
 
 
 def test_changing_progress_bar_value_redraws():
@@ -379,11 +384,11 @@ def test_border_without_background_leaves_the_inside_clear():
 
     assert surface.get_at(rect.topleft) == pygame.Color("#FF0000FF")
     assert surface.get_at((rect.left + 1, rect.centery)) == pygame.Color("#FF0000FF")
-    assert surface.get_at(rect.center) == pygame.Color(Panel().root_background_color)
+    assert surface.get_at(rect.center) == drawn(Panel().root_background_color)
 
 
 def count_pixels(surface, rect, color):
-    target = pygame.Color(color)
+    target = drawn(color)
     return sum(surface.get_at((px, py)) == target for px in range(rect.left, rect.right) for py in range(rect.top, rect.bottom))
 
 
@@ -442,7 +447,7 @@ def test_pointer_over_nothing_lights_nothing():
     menu.set_pointer_leading(True)
     surface = ui.render()
 
-    assert surface.get_at(hit_rect_of(ui, button).topleft) == pygame.Color(button.border_color)
+    assert surface.get_at(hit_rect_of(ui, button).topleft) == drawn(button.border_color)
 
 
 def test_hover_redraws_only_when_it_changes():

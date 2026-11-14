@@ -17,8 +17,7 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")  # Draws without opening a win
 import pygame
 
 from facade import (
-    COLOR_PALETTE_EDITED,
-    COLOR_PALETTE_TEXT,
+    DEFAULT_THEME,
     NATIVE_FONT_SIZE,
     AlignmentType,
     Button,
@@ -40,8 +39,9 @@ OUTPUT = ROOT / "docs" / "elements.png"
 CELL_SIZE = (220, 52)  # Room for 12px of padding, a 22px input and its 3px shadow
 LABEL_PW = 170
 HEADER_PH = 64
-SHEET_COLOR = "#05060AFF"
-CAPTION_COLOR = "#6E7896FF"
+THEME = DEFAULT_THEME
+SHEET_COLOR = THEME.surface_input  # A frame a step darker than the menus inside it
+CAPTION_COLOR = THEME.text_muted
 DIFFICULTIES = ("EASY", "NORMAL", "HARD", "NIGHTMARE")
 
 
@@ -79,7 +79,7 @@ def changed(element, *steps: str):
 def main() -> None:
     pygame.init()
     pygame.display.set_mode((1, 1))
-    interface = Interface(size=CELL_SIZE, use_hand_cursor=False)
+    interface = Interface(size=CELL_SIZE, theme=THEME, use_hand_cursor=False)
     interface.fonts.add_dir(str(FONTS))
     font = interface.fonts.get_font("editundo.ttf", NATIVE_FONT_SIZE)
     title_font = interface.fonts.get_font("editundo.ttf", 2 * NATIVE_FONT_SIZE)
@@ -129,12 +129,12 @@ def main() -> None:
 
     sheet = pygame.Surface((LABEL_PW + CELL_SIZE[0] * len(columns) + 10, HEADER_PH + len(rows) * CELL_SIZE[1]))
     sheet.fill(SHEET_COLOR)
-    sheet.blit(title_font.render("ELEMENTS", False, COLOR_PALETTE_EDITED), (16, 10))
+    sheet.blit(title_font.render("ELEMENTS", False, THEME.heading), (16, 10))
     for idx, column in enumerate(columns):
         sheet.blit(font.render(column, False, CAPTION_COLOR), (LABEL_PW + idx * CELL_SIZE[0] + 14, HEADER_PH - 20))
     for row_idx, (name, note, cells) in enumerate(rows):
         row_py = HEADER_PH + row_idx * CELL_SIZE[1]
-        sheet.blit(font.render(name, False, COLOR_PALETTE_TEXT), (16, row_py + 16))
+        sheet.blit(font.render(name, False, THEME.text_normal), (16, row_py + 16))
         if note is not None:
             sheet.blit(font.render(note, False, CAPTION_COLOR), (16, row_py + 30))
         for col_idx, cell in enumerate(cells):

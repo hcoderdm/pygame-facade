@@ -18,6 +18,7 @@ from .assets import FontManager, ImageManager
 from .elements import (
     RGBA,
     TRANSPARENT,
+    Color,
     AlignmentType,
     BulletList,
     Button,
@@ -44,6 +45,8 @@ from .elements import (
     Toggle,
     VerticalDivision,
 )
+
+from .theme import DEFAULT_THEME, Theme, ThemeColorType
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -128,7 +131,7 @@ class _TextCache(_SurfaceCache):
         self._fonts = fonts
         self._metrics_cache: dict[tuple[str, int, bool, bool, bool], tuple[int, int, int]] = {}
 
-    def get_surf(self, text: Text, wrap_pw: int) -> tuple[pygame.Surface, pygame.Rect]:
+    def get_surf(self, text: Text, wrap_pw: int, theme: Theme) -> tuple[pygame.Surface, pygame.Rect]:
         """
         ``text`` rendered with its font, decorations, highlight and alpha, wrapped
         at ``wrap_pw`` when wrappable, and the part of it that layout uses.
@@ -138,7 +141,8 @@ class _TextCache(_SurfaceCache):
         Descenders, underlines and cursors still draw outside it.
         """
         wrap_pw = wrap_pw if text.is_wrappable else 0
-        key = (text.font_name, text.font_size, text.text, text.text_color, text.text_background, text.text_decorations, wrap_pw, text.text_alpha)
+        text_color, text_background = theme.get_rgba(text.text_color), theme.get_rgba(text.text_background)
+        key = (text.font_name, text.font_size, text.text, text_color, text_background, text.text_decorations, wrap_pw, text.text_alpha)
         cached = self._get(key)
         if cached is not None:
             return cached
@@ -150,11 +154,11 @@ class _TextCache(_SurfaceCache):
         font.set_underline(bool(decorations & TextDecorationType.UNDERLINE))
         font.set_strikethrough(bool(decorations & TextDecorationType.STRIKETHROUGH))
         is_antialiased = bool(decorations & TextDecorationType.ANTIALIASING)
-        glyphs = font.render(text.text, is_antialiased, text.text_color, None, wrap_pw).convert_alpha()
+        glyphs = font.render(text.text, is_antialiased, text_color, None, wrap_pw).convert_alpha()
 
         surf = _make_surf(glyphs.get_width(), glyphs.get_height())
-        if text.text_background != TRANSPARENT:
-            surf.fill(pygame.Color(text.text_background))
+        if text_background != TRANSPARENT:
+            surf.fill(pygame.Color(text_background))
         surf.blit(glyphs, (0, 0))
         surf.set_alpha(text.text_alpha)
 
@@ -212,11 +216,12 @@ class _ShadowCache(_SurfaceCache):
     def __init__(self, max_bytes: int = _SHADOW_CACHE_BYTES) -> None:
         super().__init__(max_bytes)
 
-    def get_surf(self, element: Element, source_surf: pygame.Surface) -> pygame.Surface | None:
+    def get_surf(self, element: Element, source_surf: pygame.Surface, theme: Theme) -> pygame.Surface | None:
         """The mask of ``source_surf`` in the element's shadow colour, alpha and scale, or ``None`` when invisible."""
-        if element.shadow_color == TRANSPARENT or element.shadow_alpha == 0:
+        shadow_color = theme.get_rgba(element.shadow_color)
+        if shadow_color == TRANSPARENT or element.shadow_alpha == 0:
             return None
-        key = (id(source_surf), element.shadow_color, element.shadow_alpha, element.shadow_scale)
+        key = (id(source_surf), shadow_color, element.shadow_alpha, element.shadow_scale)
         cached = self._get(key)
         if cached is not None and cached[0] is source_surf:
             return cached[1]
@@ -227,7 +232,7 @@ class _ShadowCache(_SurfaceCache):
             scaled_pw = int(source_surf.get_width() * element.shadow_scale)
             scaled_ph = int(source_surf.get_height() * element.shadow_scale)
             mask = pygame.mask.from_surface(pygame.transform.smoothscale(mask_surf, (scaled_pw, scaled_ph)))
-        shadow_surf = mask.to_surface(setcolor=element.shadow_color, unsetcolor=(0, 0, 0, 0))
+        shadow_surf = mask.to_surface(setcolor=shadow_color, unsetcolor=(0, 0, 0, 0))
         shadow_surf.set_alpha(element.shadow_alpha)
         self._put(key, (source_surf, shadow_surf), shadow_surf)
         return shadow_surf
@@ -245,10 +250,10 @@ class _SegmentStrip(Element):
     segment_pw: int
     segment_ph: int
     gap_pw: int
-    fill_color: RGBA
-    empty_color: RGBA
+    fill_color: Color
+    empty_color: Color
 
-    background_color: RGBA = TRANSPARENT
+    background_color: Color = TRANSPARENT
     is_selectable: bool = False
 
 
@@ -338,10 +343,11 @@ class _MenuTree:
 class MenuRenderer:
     """Composes a menu's element tree and returns it as a window-sized surface."""
 
-    def __init__(self) -> None:
+    def __init__(self, theme: Theme = DEFAULT_THEME) -> None:
         self.fonts: FontManager = FontManager()
         self.images: ImageManager = ImageManager()
 
+        self._theme: Theme = theme
         self._text_cache = _TextCache(self.fonts)
         self._box_cache = _BoxCache()
         self._shadow_cache = _ShadowCache()
@@ -349,6 +355,18 @@ class MenuRenderer:
         self._menu_tree: _MenuTree | None = None
 
     # -------------------------------------------------------------------------
+
+    @property
+    def theme(self) -> Theme:
+        """The colours that ``ThemeColorType`` roles are drawn in."""
+        return self._theme
+
+    @theme.setter
+    def theme(self, theme: Theme) -> None:
+        if theme != self._theme:
+            self._theme = theme
+            # The caches key on drawn colours, so they stay valid; only the composed tree is out of date
+            self._menu_tree = None
 
     def render(self, menu: Menu, size: tuple[int, int]) -> pygame.Surface:
         tree = self._menu_tree
@@ -410,8 +428,8 @@ class MenuRenderer:
 
         border_rect = pygame.Rect(margin_pw, margin_ph, node.pw - 2 * margin_pw, node.ph - 2 * margin_ph)
         background_rect = border_rect.inflate(-2 * border_thickness, -2 * border_thickness)
-        border_color = _color(node.element.border_color, node.element.border_alpha) if border_thickness > 0 and border_rect.width > 0 and border_rect.height > 0 else None
-        background_color = _color(node.element.background_color, node.element.background_alpha) if background_rect.width > 0 and background_rect.height > 0 else None
+        border_color = self._get_color(node.element.border_color, node.element.border_alpha) if border_thickness > 0 and border_rect.width > 0 and border_rect.height > 0 else None
+        background_color = self._get_color(node.element.background_color, node.element.background_alpha) if background_rect.width > 0 and background_rect.height > 0 else None
         border_color = border_color if border_color is not None and border_color.a > 0 else None
         background_color = background_color if background_color is not None and background_color.a > 0 else None
         node.box_surf = self._box_cache.get_surf(node.pw, node.ph, margin_pw, margin_ph, border_thickness, border_color, background_color)
@@ -466,10 +484,11 @@ class MenuRenderer:
     @_compose_content.register(Gap)
     def _(self, element: Gap, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
         gap_pw, gap_ph = space.range_pw.start, space.range_ph.start
-        if gap_pw == 0 or gap_ph == 0 or _color(element.background_color, element.background_alpha).a == 0:
+        gap_color = self._get_color(element.background_color, element.background_alpha)
+        if gap_pw == 0 or gap_ph == 0 or gap_color.a == 0:
             return _MenuTree.Node(element)
         gap_surf = _make_surf(gap_pw, gap_ph)
-        gap_surf.fill(element.background_color)
+        gap_surf.fill(gap_color)
         gap_surf.set_alpha(element.background_alpha)
         return _MenuTree.Node(element, content_surf=gap_surf)
 
@@ -479,7 +498,7 @@ class MenuRenderer:
 
     @_compose_content.register(Text)
     def _(self, element: Text, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        text_surf, layout_rect = self._text_cache.get_surf(element, space.range_pw.stop)
+        text_surf, layout_rect = self._text_cache.get_surf(element, space.range_pw.stop, self._theme)
         return _MenuTree.Node(element, content_surf=text_surf, content_rect=layout_rect)
 
     @_compose_content.register(Image)
@@ -557,7 +576,7 @@ class MenuRenderer:
         strip_pw = element.count * element.segment_pw + max(0, element.count - 1) * element.gap_pw
         strip_surf = _make_surf(strip_pw, element.segment_ph)
         for idx in range(element.count):
-            color = element.fill_color if idx < element.filled else element.empty_color
+            color = self._theme.get_rgba(element.fill_color if idx < element.filled else element.empty_color)
             strip_surf.fill(color, pygame.Rect(idx * (element.segment_pw + element.gap_pw), 0, element.segment_pw, element.segment_ph))
         return _MenuTree.Node(element, content_surf=strip_surf)
 
@@ -741,11 +760,14 @@ class MenuRenderer:
         return self._measure_text(replace(text, text="x x")) - 2 * self._measure_text(replace(text, text="x"))
 
     def _measure_cap_ph(self, text: Text) -> int:
-        return self._text_cache.get_surf(replace(text, text="H", is_wrappable=False), 0)[1].height
+        return self._text_cache.get_surf(replace(text, text="H", is_wrappable=False), 0, self._theme)[1].height
+
+    def _get_color(self, color: Color, alpha: int = 0xFF) -> pygame.Color:
+        return _color(self._theme.get_rgba(color), alpha)
 
     def _measure_text(self, text: Text) -> int:
         """Laid-out width of ``text`` on one line."""
-        return self._text_cache.get_surf(text, 0)[1].width
+        return self._text_cache.get_surf(text, 0, self._theme)[1].width
 
     def _make_arrow_zone(self, element: Selector | Slider, arrow: Text, side: str, is_disabled: bool, is_lit: bool, tree: _MenuTree) -> HorizontalDivision:
         # Under the pointer only the arrow on its side lights; with the keys both do
@@ -791,7 +813,7 @@ class MenuRenderer:
             at_px, at_py = (box_px, box_py) if surf is node.box_surf else (box_px + node.inner_offset[0], box_py + node.inner_offset[1])
             if surf is node.content_surf and node.content_rect is not None:
                 at_px, at_py = at_px - node.content_rect.x, at_py - node.content_rect.y
-            shadow_surf = self._shadow_cache.get_surf(element, surf)
+            shadow_surf = self._shadow_cache.get_surf(element, surf, self._theme)
             if shadow_surf is not None:
                 shadow_px, shadow_py = self._resolve_measure(element.shadow_offset, element.shadow_offset_measure, _MenuTree.Space(range(surf.get_width()), range(surf.get_height())))
                 target.blit(shadow_surf, (at_px + shadow_px, at_py + shadow_py))
@@ -827,9 +849,9 @@ class MenuRenderer:
         thumb_ph = max(_SCROLLBAR_MIN_PH, int(output_ph * (output_ph / facade_ph)))
         thumb_py = int((scroll_py / (facade_ph - output_ph)) * (output_ph - thumb_ph))
         thumb_rect = pygame.Rect(track_px, thumb_py, _SCROLLBAR_PW, thumb_ph)
-        pygame.draw.rect(strip, "#181C2780", pygame.Rect(track_px, 0, _SCROLLBAR_PW, output_ph))
-        pygame.draw.rect(strip, "#30384E80", thumb_rect)
-        pygame.draw.rect(strip, "#60606080", thumb_rect, 1)
+        pygame.draw.rect(strip, self._get_color(ThemeColorType.SURFACE_INPUT, 0x80), pygame.Rect(track_px, 0, _SCROLLBAR_PW, output_ph))
+        pygame.draw.rect(strip, self._get_color(ThemeColorType.SURFACE_DISPLAY, 0x80), thumb_rect)
+        pygame.draw.rect(strip, self._get_color(ThemeColorType.BORDER_DISPLAY, 0x80), thumb_rect, 1)
 
         if is_blended:
             output.blit(strip, (output.get_width() - _SCROLLBAR_PW, 0))
@@ -1032,6 +1054,15 @@ class DebugRenderer:
         self._font: pygame.font.Font | None = None
         self._overlay_cache: pygame.Surface | None = None
         self._overlay_key: tuple[tuple[str, str], ...] | None = None
+
+    @property
+    def theme(self) -> Theme:
+        """The wrapped renderer's theme."""
+        return self.renderer.theme
+
+    @theme.setter
+    def theme(self, theme: Theme) -> None:
+        self.renderer.theme = theme
 
     def __getattr__(self, name: str) -> Any:
         # Anything not overridden here behaves as on the wrapped renderer

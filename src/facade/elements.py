@@ -12,6 +12,8 @@ import time
 from typing import Annotated, Any, Callable, ClassVar
 import uuid
 
+from .theme import ThemeColorType
+
 
 FLOAT_REGEX = r"^[+-]?(\d+(\.\d*)?|\.\d+)$"
 INT_REGEX = r"^[+-]?\d+$"
@@ -23,16 +25,7 @@ BOOL_REGEX = r"^[01]$"
 RGBA = Annotated[str, f"regex:{RGBA_REGEX}"]
 Measure = Annotated[tuple[float, float], ""]
 Angle = Annotated[float, "radians", "range: [0, 2π]"]
-
-COLOR_PALETTE_BASE: RGBA = "#0C0E14FF"  # Menu background
-COLOR_PALETTE_SECONDARY: RGBA = "#181C27FF"  # Inside an input's box
-COLOR_PALETTE_ACCENT: RGBA = "#EC4662FF"  # The selected element
-COLOR_PALETTE_NEUTRAL: RGBA = "#30384EFF"  # Read-only boxes, unavailable parts and shadows
-COLOR_PALETTE_TEXT: RGBA = "#E0E0E0FF"
-COLOR_PALETTE_EDITED: RGBA = "#F0B443FF"  # A value that differs from the original
-COLOR_PALETTE_BORDER: RGBA = "#606060FF"  # Border of read-only boxes
-COLOR_PALETTE_MUTED: RGBA = "#6E7896FF"  # Secondary text, readable where NEUTRAL would vanish
-COLOR_PALETTE_HEADING: RGBA = "#F0B443FF"  # Headings and picked-out words
+Color = RGBA | ThemeColorType  # A fixed colour, or a role the active theme decides
 
 TRANSPARENT: RGBA = "#00000000"
 BLACK: RGBA = "#000000FF"
@@ -232,7 +225,7 @@ class SelectedModifier(Element):
     effect while the element is selected.
     """
 
-    text_color: RGBA = COLOR_PALETTE_ACCENT
+    text_color: Color = ThemeColorType.PRIMARY
 
 
 # -----------------------------------------------------------------------------
@@ -330,7 +323,7 @@ class Text(Element):
     """"""
 
     text: str = ""  # Text content to display
-    text_color: RGBA = WHITE
+    text_color: Color = ThemeColorType.TEXT_NORMAL
     text_background: RGBA = TRANSPARENT  # Highlight color
     text_alpha: int = 0xFF
     text_decorations: TextDecorationType = TextDecorationType.NONE
@@ -354,7 +347,7 @@ class NormalText(Text):
     """
 
     font_size: int = NATIVE_FONT_SIZE
-    text_color: RGBA = COLOR_PALETTE_TEXT
+    text_color: Color = ThemeColorType.TEXT_NORMAL
     # Plain weight: pygame's synthetic bold thickens the pixel font's strokes
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
@@ -368,7 +361,7 @@ class TitleText(Text):
     """
 
     font_size: int = NATIVE_FONT_SIZE * 5
-    text_color: RGBA = WHITE
+    text_color: Color = ThemeColorType.HEADING
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
@@ -381,8 +374,8 @@ class SubtitleText(Text):
     """
 
     font_size: int = NATIVE_FONT_SIZE
-    text_color: RGBA = BLACK
-    text_background: RGBA = WHITE
+    text_color: Color = ThemeColorType.SURFACE_INPUT
+    text_background: Color = ThemeColorType.FILL
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
@@ -396,8 +389,8 @@ class HeadingOneText(Text):
     font_name: str = "editundo.ttf"
     font_size: int = NATIVE_FONT_SIZE * 4
 
-    text_color: RGBA = "#F0B443FF"
-    shadow_color: RGBA = "#E6A23EFF"
+    text_color: Color = ThemeColorType.HEADING
+    shadow_color: Color = ThemeColorType.HEADING_SHADOW
     shadow_offset: Measure = (4.0, 4.0)  # One font pixel at this size
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
@@ -412,8 +405,8 @@ class HeadingTwoText(Text):
     font_name: str = "editundo.ttf"
     font_size: int = NATIVE_FONT_SIZE * 2
 
-    text_color: RGBA = "#F0B443FF"
-    shadow_color: RGBA = "#E6A23EFF"
+    text_color: Color = ThemeColorType.HEADING
+    shadow_color: Color = ThemeColorType.HEADING_SHADOW
     shadow_offset: Measure = (2.0, 2.0)
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
@@ -428,8 +421,8 @@ class HeadingThreeText(Text):
     font_name: str = "editundo.ttf"
     font_size: int = NATIVE_FONT_SIZE
 
-    text_color: RGBA = "#F0B443FF"
-    shadow_color: RGBA = "#E6A23EFF"
+    text_color: Color = ThemeColorType.HEADING
+    shadow_color: Color = ThemeColorType.HEADING_SHADOW
     shadow_offset: Measure = (1.0, 1.0)
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
@@ -472,13 +465,13 @@ class TextBlock(Element):
     class EmphasisText(NormalText):
         """A span picked out in the heading colour."""
 
-        text_color: RGBA = COLOR_PALETTE_HEADING
+        text_color: Color = ThemeColorType.HEADING
 
     @dataclass(kw_only=True, repr=False)
     class AsideText(NormalText):
         """A span set back in the muted colour."""
 
-        text_color: RGBA = COLOR_PALETTE_MUTED
+        text_color: Color = ThemeColorType.TEXT_MUTED
 
     paragraphs: list[Paragraph] = field(default_factory=list)
     body_text: Text = field(default_factory=BodyText)
@@ -498,7 +491,7 @@ class BulletList(TextBlock):
     """
 
     paragraph_gap_ph: int = 8
-    bullet_color: RGBA = COLOR_PALETTE_HEADING
+    bullet_color: Color = ThemeColorType.HEADING
     bullet_pw: int = 4
     bullet_gap_pw: int = 6  # Between the bullet and the item's text
 
@@ -514,7 +507,7 @@ class CreditList(Element):
     class RoleText(NormalText):
         """The style of each role."""
 
-        text_color: RGBA = COLOR_PALETTE_MUTED
+        text_color: Color = ThemeColorType.TEXT_MUTED
 
     @dataclass(kw_only=True, repr=False)
     class NameText(NormalText):
@@ -524,7 +517,7 @@ class CreditList(Element):
     role_text: Text = field(default_factory=RoleText)
     name_text: Text = field(default_factory=NameText)
 
-    leader_color: RGBA = COLOR_PALETTE_NEUTRAL
+    leader_color: Color = ThemeColorType.BORDER_DISPLAY
     dot_pw: int = 2  # Each dot is square
     dot_gap_pw: int = 2
     leader_gap_pw: int = 6  # Kept clear between the leader and the text on either side
@@ -545,10 +538,10 @@ class SectionHeader(Element):
     class HeaderText(NormalText):
         """The style of the section's name."""
 
-        text_color: RGBA = COLOR_PALETTE_HEADING
+        text_color: Color = ThemeColorType.HEADING
 
     label: Text = field(default_factory=HeaderText)
-    rule_color: RGBA = COLOR_PALETTE_BORDER
+    rule_color: Color = ThemeColorType.BORDER_DISPLAY
     rule_ph: int = 2
     rule_gap_pw: int = 6  # Between the label and the rule
 
@@ -576,8 +569,8 @@ class ProgressBar(Element):
     segments: int = 10  # The segments share whatever width the bar box has
     segment_gap_pw: int = 2
     segment_ph: int = 8  # The height of a capital at the native font size
-    fill_color: RGBA = COLOR_PALETTE_TEXT
-    empty_color: RGBA = COLOR_PALETTE_SECONDARY
+    fill_color: Color = ThemeColorType.FILL
+    empty_color: Color = ThemeColorType.SURFACE_INPUT
 
     number_text: Text = field(default_factory=NumberText)
     value_format: str = "{fraction:.0%}"  # str.format pattern given ``value`` and ``fraction``
@@ -588,10 +581,10 @@ class ProgressBar(Element):
     size: Measure = _CONTROL_SIZE
     padding: Measure = _CONTROL_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
-    background_color: RGBA = COLOR_PALETTE_NEUTRAL
-    border_color: RGBA = COLOR_PALETTE_BORDER
+    background_color: Color = ThemeColorType.SURFACE_DISPLAY
+    border_color: Color = ThemeColorType.BORDER_DISPLAY
     border_thickness: int = 1
-    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_color: Color = TRANSPARENT  # Display boxes sit flat; only inputs cast a shadow
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
     is_selectable: bool = False
@@ -656,14 +649,14 @@ class Button(InteractiveElement):
     size: Measure = _CONTROL_SIZE
     padding: Measure = _CONTROL_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
-    background_color: RGBA = COLOR_PALETTE_SECONDARY
-    border_color: RGBA = COLOR_PALETTE_TEXT
+    background_color: Color = ThemeColorType.SURFACE_INPUT
+    border_color: Color = ThemeColorType.BORDER_INPUT
     border_thickness: int = 1
-    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
-    selected_text_color: RGBA = COLOR_PALETTE_ACCENT
+    selected_border_color: Color = ThemeColorType.PRIMARY
+    selected_text_color: Color = ThemeColorType.PRIMARY
 
     def __call__(self) -> Any:
         """Run the button's action. Buttons have no value, so no argument is passed."""
@@ -684,7 +677,7 @@ class Toggle(InteractiveElement):
     class ToggleText(NormalText):
         """The style of both halves' text; the filled half recolours it."""
 
-        text_color: RGBA = COLOR_PALETTE_MUTED
+        text_color: Color = ThemeColorType.TEXT_MUTED
 
     value: bool = False  # Current boolean state
     action: Callable[[Any], bool] = field(default=lambda v: True)
@@ -696,17 +689,17 @@ class Toggle(InteractiveElement):
     size: Measure = _CONTROL_SIZE
     padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
-    background_color: RGBA = COLOR_PALETTE_SECONDARY
-    border_color: RGBA = COLOR_PALETTE_TEXT
+    background_color: Color = ThemeColorType.SURFACE_INPUT
+    border_color: Color = ThemeColorType.BORDER_INPUT
     border_thickness: int = 1
-    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    fill_color: RGBA = COLOR_PALETTE_TEXT
-    edited_fill_color: RGBA = COLOR_PALETTE_EDITED
-    filled_text_color: RGBA = COLOR_PALETTE_SECONDARY
-    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
-    selected_text_color: RGBA = COLOR_PALETTE_ACCENT  # The option it would switch to, while focused
+    fill_color: Color = ThemeColorType.FILL
+    edited_fill_color: Color = ThemeColorType.WARNING
+    filled_text_color: Color = ThemeColorType.SURFACE_INPUT
+    selected_border_color: Color = ThemeColorType.PRIMARY
+    selected_text_color: Color = ThemeColorType.PRIMARY  # The option it would switch to, while focused
 
     def __call__(self) -> bool:
         """Flip the value and call ``action`` with it."""
@@ -739,22 +732,22 @@ class Slider(InteractiveElement, ProgressBar):
 
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
-    empty_color: RGBA = COLOR_PALETTE_NEUTRAL
+    empty_color: Color = ThemeColorType.SURFACE_DISPLAY
 
     # InteractiveElement restores Element's defaults over ProgressBar's, so the box is declared again
     size: Measure = _CONTROL_SIZE
     padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
-    background_color: RGBA = COLOR_PALETTE_SECONDARY
-    border_color: RGBA = COLOR_PALETTE_TEXT
+    background_color: Color = ThemeColorType.SURFACE_INPUT
+    border_color: Color = ThemeColorType.BORDER_INPUT
     border_thickness: int = 1
-    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
-    selected_arrow_color: RGBA = COLOR_PALETTE_ACCENT
-    disabled_arrow_color: RGBA = COLOR_PALETTE_NEUTRAL
-    altered_color: RGBA = COLOR_PALETTE_EDITED  # Segments and number once the value has been changed
+    selected_border_color: Color = ThemeColorType.PRIMARY
+    selected_arrow_color: Color = ThemeColorType.PRIMARY
+    disabled_arrow_color: Color = ThemeColorType.TEXT_DISABLED
+    altered_color: Color = ThemeColorType.WARNING  # Segments and number once the value has been changed
 
     is_selectable: bool = True
     is_edited: bool = field(default=False, init=False, repr=False)
@@ -816,16 +809,16 @@ class Selector(InteractiveElement):
     size: Measure = _CONTROL_SIZE
     padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
-    background_color: RGBA = COLOR_PALETTE_SECONDARY
-    border_color: RGBA = COLOR_PALETTE_TEXT
+    background_color: Color = ThemeColorType.SURFACE_INPUT
+    border_color: Color = ThemeColorType.BORDER_INPUT
     border_thickness: int = 1
-    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
-    selected_arrow_color: RGBA = COLOR_PALETTE_ACCENT
-    altered_selection_color: RGBA = COLOR_PALETTE_EDITED
-    disabled_arrow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    selected_border_color: Color = ThemeColorType.PRIMARY
+    selected_arrow_color: Color = ThemeColorType.PRIMARY
+    altered_selection_color: Color = ThemeColorType.WARNING
+    disabled_arrow_color: Color = ThemeColorType.TEXT_DISABLED
 
     is_edited: bool = field(default=False, init=False, repr=False)
 
@@ -865,14 +858,14 @@ class InputField(InteractiveElement):
         """The prompt drawn before the value."""
 
         text: str = ">"
-        text_color: RGBA = COLOR_PALETTE_NEUTRAL
+        text_color: Color = ThemeColorType.TEXT_MUTED
 
     @dataclass(kw_only=True, repr=False)
     class InputHintText(NormalText):
         """Shown after the prompt while the field is empty."""
 
         text: str = "[RETURN]"
-        text_color: RGBA = COLOR_PALETTE_NEUTRAL
+        text_color: Color = ThemeColorType.TEXT_MUTED
 
     @dataclass(kw_only=True, repr=False)
     class InputValueText(NormalText):
@@ -888,15 +881,15 @@ class InputField(InteractiveElement):
     size: Measure = _CONTROL_SIZE
     padding: Measure = _CONTROL_PADDING
     alignment: AlignmentType = AlignmentType.MIDLEFT
-    background_color: RGBA = COLOR_PALETTE_SECONDARY
-    border_color: RGBA = COLOR_PALETTE_TEXT
+    background_color: Color = ThemeColorType.SURFACE_INPUT
+    border_color: Color = ThemeColorType.BORDER_INPUT
     border_thickness: int = 1
-    shadow_color: RGBA = COLOR_PALETTE_NEUTRAL
+    shadow_color: Color = ThemeColorType.SHADOW
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
-    selected_border_color: RGBA = COLOR_PALETTE_ACCENT
-    invalid_text_color: RGBA = COLOR_PALETTE_ACCENT
-    edited_text_color: RGBA = COLOR_PALETTE_EDITED
+    selected_border_color: Color = ThemeColorType.PRIMARY
+    invalid_text_color: Color = ThemeColorType.DANGER
+    edited_text_color: Color = ThemeColorType.WARNING
 
     is_edited: bool = field(default=False, init=False, repr=False)
     is_open: bool = field(default=False, init=False, repr=False)

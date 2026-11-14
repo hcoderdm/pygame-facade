@@ -16,9 +16,6 @@ from typing import Any, Callable
 
 from facade import (
     ALPHANUMERIC_REGEX,
-    COLOR_PALETTE_BORDER,
-    COLOR_PALETTE_NEUTRAL,
-    COLOR_PALETTE_SECONDARY,
     FLOAT_REGEX,
     INT_REGEX,
     RGBA_REGEX,
@@ -36,6 +33,8 @@ from facade import (
     MeasureType,
     Menu,
     NATIVE_FONT_SIZE,
+    TRANSPARENT,
+    ThemeColorType,
     NormalText,
     SectionHeader,
     Selector,
@@ -72,36 +71,36 @@ class Start(Menu):
             Gap(size=(1.0, 0.10), size_measure=MeasureType.RELATIVE),
             HorizontalDivision(
                 gap=(12.0, 0.0),
-                background_color="#3D252BFF",
+                background_color=ThemeColorType.SURFACE_DISPLAY,
                 padding=(24.0, 32.0),
-                border_color="#E6A23EFF",
+                border_color=ThemeColorType.HEADING,
                 border_thickness=2,
-                shadow_color="#E6A23EFF",
+                shadow_color=ThemeColorType.HEADING_SHADOW,
                 shadow_alpha=0x60,
                 elements=[
                     TitleText(
                         text="A",
                         font_size=NATIVE_FONT_SIZE * 2,
-                        text_color="#F0B443FF",
+                        text_color=ThemeColorType.HEADING,
                         text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING,
                     ),
                     TitleText(
                         text="Mountain",
-                        text_color="#F0B443FF",
-                        shadow_color="#E6A23EFF",
+                        text_color=ThemeColorType.HEADING,
+                        shadow_color=ThemeColorType.HEADING_SHADOW,
                         shadow_offset=(3.0, 3.0),
                         text_decorations=TextDecorationType.UNDERLINE,
                     ),
                     TitleText(
                         text="OF",
                         font_size=NATIVE_FONT_SIZE * 2,
-                        text_color="#F0B443FF",
+                        text_color=ThemeColorType.HEADING,
                         text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING,
                     ),
                     TitleText(
                         text="Tiles",
-                        text_color="#F0B443FF",
-                        shadow_color="#E6A23EFF",
+                        text_color=ThemeColorType.HEADING,
+                        shadow_color=ThemeColorType.HEADING_SHADOW,
                         shadow_offset=(3.0, 3.0),
                     ),
                 ],
@@ -204,11 +203,10 @@ class Settings(Menu):
                 size=(136.0, 22.0),
                 padding=(6.0, 6.0),
                 alignment=AlignmentType.MIDLEFT,
-                background_color=COLOR_PALETTE_NEUTRAL,
-                border_color=COLOR_PALETTE_BORDER,
+                background_color=ThemeColorType.SURFACE_DISPLAY,
+                border_color=ThemeColorType.BORDER_DISPLAY,
                 border_thickness=1,
-                shadow_color=COLOR_PALETTE_NEUTRAL,
-                shadow_alpha=0xB0,
+                shadow_color=TRANSPARENT,  # Display boxes sit flat; only inputs cast a shadow
             )
 
         def _build_editor(name: str, value: Any) -> Element:
@@ -278,10 +276,10 @@ def _panel(elements: list[Element]) -> VerticalDivision:
         size=(_COLUMN_PW + 2 * (_PANEL_PADDING + 1), 0.0),
         padding=(_PANEL_PADDING, _PANEL_PADDING),
         gap=(0.0, 8.0),
-        background_color=COLOR_PALETTE_SECONDARY,
+        background_color=ThemeColorType.SURFACE_INPUT,
         border_thickness=1,
-        border_color=COLOR_PALETTE_BORDER,
-        shadow_color=COLOR_PALETTE_NEUTRAL,
+        border_color=ThemeColorType.BORDER_DISPLAY,
+        shadow_color=ThemeColorType.SHADOW,
         shadow_alpha=0xB0,
         shadow_offset=(_PANEL_SHADOW_PH, _PANEL_SHADOW_PH),
     )

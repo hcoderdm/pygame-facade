@@ -16,6 +16,7 @@ import pygame
 import settings  # examples/settings.py, edited live by the Settings menu
 from facade import DebugRenderer, Interface, MenuRenderer
 from menus import About, Pause, Settings, Start  # examples/menus.py, this game's screens
+from themes import TABLE_FELT  # examples/themes.py, the colours the menus and the table share
 
 
 # The Settings menu's boxes, in the order settings.py lists them
@@ -37,9 +38,9 @@ def main() -> None:
     ball = pygame.Vector2(400, 300)
     velocity = pygame.Vector2(240, 180)
 
-    interface = Interface(size=screen.get_size())
+    interface = Interface(size=screen.get_size(), theme=TABLE_FELT)
     # A renderer with debugging aids that the keys below switch on
-    debug = DebugRenderer(MenuRenderer())
+    debug = DebugRenderer(MenuRenderer(TABLE_FELT))
     interface.renderer = debug
     # Register the bundled pixel font; Text elements default to "editundo.ttf".
     interface.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
@@ -99,8 +100,9 @@ def main() -> None:
                 velocity.y = abs(velocity.y) if ball.y < 20 else -abs(velocity.y)
 
         # Draw the game, then the GUI over it
-        screen.fill((24, 64, 48))
-        pygame.draw.circle(screen, (230, 190, 60), ball, 20)
+        # The game draws with the theme's own colours, so it matches the menus over it
+        screen.fill(interface.theme.get_extra("table"))
+        pygame.draw.circle(screen, interface.theme.get_extra("ball"), ball, 20)
         if (gui := interface.render()) is not None:
             screen.blit(gui, (0, 0))
         pygame.display.flip()

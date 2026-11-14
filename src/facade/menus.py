@@ -11,6 +11,7 @@ import uuid
 
 from .elements import (
     RGBA,
+    Color,
     AlignmentType,
     Element,
     JustifyType,
@@ -18,6 +19,7 @@ from .elements import (
     MeasureType,
     VerticalDivision,
 )
+from .theme import ThemeColorType
 
 
 @dataclass(kw_only=True)
@@ -51,7 +53,7 @@ class Menu(ABC):
     root_offset_measure = MeasureType.ABSOLUTE
     root_padding_measure = MeasureType.ABSOLUTE
     root_gap_measure = MeasureType.ABSOLUTE
-    root_background_color: RGBA = "#0C0E14FF"
+    root_background_color: Color = ThemeColorType.BACKGROUND
     root_background_alpha: int = 0xFF
     root_border_thickness: int = 0
     root_border_color: RGBA = "#00000000"

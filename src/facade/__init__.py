@@ -7,19 +7,12 @@ Menu and UI overlay toolkit for pygame-ce games.
 from .assets import FontManager, ImageManager
 from .elements import (
     ALPHANUMERIC_REGEX,
-    COLOR_PALETTE_ACCENT,
-    COLOR_PALETTE_BASE,
-    COLOR_PALETTE_BORDER,
-    COLOR_PALETTE_EDITED,
-    COLOR_PALETTE_HEADING,
-    COLOR_PALETTE_MUTED,
-    COLOR_PALETTE_NEUTRAL,
-    COLOR_PALETTE_SECONDARY,
-    COLOR_PALETTE_TEXT,
     FLOAT_REGEX,
     INT_REGEX,
     NATIVE_FONT_SIZE,
     RGBA,
+    TRANSPARENT,
+    Color,
     RGBA_REGEX,
     AlignmentType,
     BulletList,
@@ -69,6 +62,7 @@ from .manager import (
 )
 from .menus import Menu
 from .renderer import DebugRenderer, MenuRenderer
+from .theme import DEFAULT_THEME, Theme, ThemeColorType, mix_rgba
 
 
 __all__ = [
@@ -102,6 +96,8 @@ __all__ = [
     "InputField",
     # Attribute types
     "RGBA",
+    "TRANSPARENT",
+    "Color",
     "Measure",
     "Paragraph",
     "MeasureType",
@@ -111,16 +107,11 @@ __all__ = [
     "ImageTransformType",
     "OverflowType",
     "RotationType",
-    # Palette and font grid
-    "COLOR_PALETTE_ACCENT",
-    "COLOR_PALETTE_BASE",
-    "COLOR_PALETTE_BORDER",
-    "COLOR_PALETTE_EDITED",
-    "COLOR_PALETTE_HEADING",
-    "COLOR_PALETTE_MUTED",
-    "COLOR_PALETTE_NEUTRAL",
-    "COLOR_PALETTE_SECONDARY",
-    "COLOR_PALETTE_TEXT",
+    # Theme and font grid
+    "Theme",
+    "ThemeColorType",
+    "DEFAULT_THEME",
+    "mix_rgba",
     "NATIVE_FONT_SIZE",
     # Input validators
     "INT_REGEX",

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pygame
 
-from facade import BulletList, CreditList, Element, Interface, Menu, NormalText, SectionHeader, TextBlock
+from facade import DEFAULT_THEME, BulletList, CreditList, Element, Interface, Menu, NormalText, SectionHeader, TextBlock
 
 SIZE = (800, 600)
 FONTS = Path(__file__).resolve().parents[1] / "examples" / "assets" / "fonts"
@@ -31,7 +31,7 @@ def rendered(element):
 
 def ink(surface, rect, color):
     """Every pixel of ``color`` inside ``rect``."""
-    target = pygame.Color(color)
+    target = pygame.Color(DEFAULT_THEME.get_rgba(color))
     return [(px, py) for px in range(rect.left, rect.right) for py in range(rect.top, rect.bottom) if surface.get_at((px, py)) == target]
 
 
