@@ -391,6 +391,10 @@ class MenuRenderer:
             node = self._compose_node(self._make_bar_row(element, tree, space), tree, space)
             node.hit_target = element
             return node
+        if isinstance(element, Selector) and element.use_number:
+            node = self._compose_node(self._make_selector_row(element, space), tree, space)
+            node.hit_target = element
+            return node
 
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
         margin_pw, margin_ph = self._resolve_measure(element.margin, element.margin_measure, space)
@@ -671,6 +675,35 @@ class MenuRenderer:
 
     # -------------------------------------------------------------------------
 
+    def _make_selector_row(self, element: Selector, space: _MenuTree.Space) -> HorizontalDivision:
+        """The selector box and its number box, together the width the selector's ``size`` gives."""
+        size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
+        # The selector box is a copy without its number, so it is drawn as before; the row holding both is
+        # what is selected and clicked, and the copy keeps the id so it still lights with the real selector
+        selector_box = replace(
+            element, size=(float(size_pw - element.box_gap_pw - element.number_pw), float(size_ph)), size_measure=MeasureType.ABSOLUTE,
+            use_number=False, is_selectable=False, offset=(0.0, 0.0), margin=(0.0, 0.0), is_fixed=False,
+        )
+        position, count = element.get_number()
+        number_text = replace(element.number_text, text=position)
+        if element.is_edited:
+            number_text = replace(number_text, text_color=element.altered_selection_color)
+        # The layout trims the spacing after each piece of text, so 1px between them spaces them like one word
+        number_row = HorizontalDivision(elements=[number_text, replace(element.count_text, text=count)], gap=(1.0, 0.0))
+        number_box = HorizontalDivision(
+            elements=[number_row], size=(float(element.number_pw), float(size_ph)), padding=element.padding, padding_measure=element.padding_measure,
+            gap=(0.0, 0.0), alignment=AlignmentType.CENTER,
+            background_color=element.background_color, background_alpha=element.background_alpha,
+            border_thickness=element.border_thickness, border_color=element.border_color, border_alpha=element.border_alpha,
+            shadow_color=element.shadow_color, shadow_alpha=element.shadow_alpha, shadow_scale=element.shadow_scale,
+            shadow_offset=element.shadow_offset, shadow_offset_measure=element.shadow_offset_measure,
+        )
+        return HorizontalDivision(
+            elements=[selector_box, number_box], gap=(float(element.box_gap_pw), 0.0), justify=element.justify, alignment=element.alignment,
+            offset=element.offset, offset_measure=element.offset_measure, margin=element.margin, margin_measure=element.margin_measure,
+            rotation=element.rotation, is_fixed=element.is_fixed, is_selectable=element.is_selectable,
+        )
+
     def _make_bar_row(self, element: ProgressBar, tree: _MenuTree, space: _MenuTree.Space) -> HorizontalDivision:
         """The bar box and the number box of ``element``, styled and sized from its fields."""
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
@@ -943,7 +976,10 @@ class MenuRenderer:
         if isinstance(element, (Button, Toggle)):
             return "body"
         if isinstance(element, Selector):
-            return "left" if px < rect.centerx else "right"
+            box_pw = rect.width - (element.box_gap_pw + element.number_pw if element.use_number else 0)
+            if px >= rect.x + box_pw:
+                return ""  # The number box only shows the position
+            return "left" if px < rect.x + box_pw // 2 else "right"
         if isinstance(element, Slider):
             bar_pw = rect.width - (element.box_gap_pw + element.number_pw if element.use_number else 0)
             if px >= rect.x + bar_pw:

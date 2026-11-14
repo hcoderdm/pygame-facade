@@ -284,6 +284,11 @@ def handle_menu_keydown(menu: Menu, renderer: MenuRenderer | DebugRenderer, even
     typing_field = _get_typing_field(menu)
     if typing_field is not None:
         if _handle_typing_key(typing_field, event):
+            if not typing_field.is_open:
+                # Closing a field from the keyboard leaves nothing lit, however it was opened, until the pointer
+                # moves or a key shows where the keys are again
+                menu.set_pointer_leading(True)
+                menu.set_hovered(None)
             return True
         _finish_typing(typing_field)
 

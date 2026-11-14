@@ -419,6 +419,54 @@ def test_a_key_scrolls_back_to_the_keys_place_before_moving():
     assert menu.get_selected_element() is buttons[0]  # Found, not moved
     assert menu._scroll <= rect.top and rect.bottom <= menu._scroll + 120
 
+
+def test_clicking_a_selector_side_steps_it_and_the_counter_does_nothing(ui):
+    selector = Selector(selections=("A", "B", "C"), value=1)
+    ui.push(Menu(root_elements=[selector]))
+    ui.render()
+    rect = rect_of(ui, selector)
+
+    press_and_release(ui, (rect.right - 10, rect.centery))  # The counter box
+    assert selector.value == 1
+    press_and_release(ui, (rect.left + 10, rect.centery))
+    assert selector.value == 0
+
+
+def test_finishing_typing_with_enter_unlights_the_field_until_the_pointer_moves(ui):
+    field = InputField(value=InputField.InputValueText(text="PLAYER"))
+    menu = Menu(root_elements=[field])
+    ui.push(menu)
+    ui.render()
+    position = center_of(ui, field)
+
+    ui.handle_event(motion(position))
+    press_and_release(ui, position)
+    ui.handle_event(typed("x"))
+    tap(ui, pygame.K_RETURN)
+
+    assert not field.is_open and menu.get_lit_id() is None
+    ui.handle_event(motion((position[0] + 1, position[1])))
+    assert menu.get_lit_id() == field.id
+
+
+def test_finishing_typing_opened_by_the_keys_also_unlights_the_field(ui):
+    field = InputField(value=InputField.InputValueText(text="PLAYER"))
+    below = Button(label=Button.ButtonText(text="OK"))
+    menu = Menu(root_elements=[field, below])
+    ui.push(menu)
+    ui.render()
+
+    tap(ui, pygame.K_RETURN)
+    ui.handle_event(typed("x"))
+    tap(ui, pygame.K_RETURN)
+    assert not field.is_open and menu.get_lit_id() is None
+
+    tap(ui, pygame.K_DOWN)  # The first press only shows the keys are still on the field
+    assert menu.get_lit_id() == field.id
+    tap(ui, pygame.K_DOWN)
+    assert menu.get_selected_element() is below
+
+
 def test_return_key_presses_a_primary_button(ui):
     pressed = []
     ui.push(Menu(root_elements=[PrimaryButton(action=lambda: pressed.append("start"))]))

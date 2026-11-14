@@ -798,7 +798,10 @@ class Selector(InteractiveElement):
     """
     One of ``selections``, stepped through with arrows pinned to the edges of
     a fixed-size box, with the option centred between them. Every step is
-    saved at once and calls ``action`` with the new index.
+    saved at once and calls ``action`` with the new index. With
+    ``use_number``, a box to the right counts the option's position out of
+    the total, like a slider's percentage, with the total muted so the
+    number that changes stands out; ``size`` then covers both boxes.
     """
 
     @dataclass(kw_only=True, repr=False)
@@ -819,6 +822,16 @@ class Selector(InteractiveElement):
 
         text: str = "[SELECTION]"
 
+    @dataclass(kw_only=True, repr=False)
+    class NumberText(NormalText):
+        """The option's position in the box beside the selector."""
+
+    @dataclass(kw_only=True, repr=False)
+    class CountText(NormalText):
+        """The total after the position, muted so the position stands out."""
+
+        text_color: Color = ThemeColorType.TEXT_MUTED
+
     value: int = 0
     selections: tuple[str, ...] = ("",)
 
@@ -826,6 +839,14 @@ class Selector(InteractiveElement):
     left_arrow: LeftShiftArrow = field(default_factory=LeftShiftArrow)
     right_arrow: RightShiftArrow = field(default_factory=RightShiftArrow)
     gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the option's slot
+
+    number_text: Text = field(default_factory=NumberText)
+    count_text: Text = field(default_factory=CountText)
+    number_format: str = "{position}"  # str.format pattern given the 1-based ``position``
+    count_format: str = "/{count}"  # str.format pattern given the ``count`` of options
+    number_pw: int = 40  # The same width as a slider's number box
+    box_gap_pw: int = 6  # Between the selector box and the number box
+    use_number: bool = True
 
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
@@ -844,6 +865,10 @@ class Selector(InteractiveElement):
     disabled_arrow_color: Color = ThemeColorType.TEXT_DISABLED
 
     is_edited: bool = field(default=False, init=False, repr=False)
+
+    def get_number(self) -> tuple[str, str]:
+        """The position and the total shown in the number box, such as ``("2", "/4")``."""
+        return self.number_format.format(position=self.value + 1), self.count_format.format(count=len(self.selections))
 
     def get_selection(self) -> str:
         """The text of the current option."""

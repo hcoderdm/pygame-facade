@@ -400,7 +400,8 @@ def test_pointer_lights_only_the_arrow_on_its_side():
     keys_surface = ui.render()
     rect = hit_rect_of(ui, selector)
     left_zone = pygame.Rect(rect.left + 1, rect.top + 1, 20, rect.height - 2)
-    right_zone = pygame.Rect(rect.right - 21, rect.top + 1, 20, rect.height - 2)
+    box_right = rect.right - selector.box_gap_pw - selector.number_pw  # The selector box ends where its number box begins
+    right_zone = pygame.Rect(box_right - 21, rect.top + 1, 20, rect.height - 2)
     assert count_pixels(keys_surface, left_zone, selector.selected_arrow_color) > 0  # The keys light both arrows
 
     menu.set_pointer_leading(True)
@@ -481,6 +482,37 @@ def test_cursor_in_an_empty_field_sits_on_the_hint_without_moving_it(monkeypatch
 
     assert text_rect("[ESC]").topleft == closed_hint.topleft
     assert text_rect("_").topleft == closed_hint.topleft
+
+
+def test_selector_counts_its_position_beside_it_in_one_input_width():
+    selector = Selector(selections=("A", "B", "C", "D"), value=1)
+    plain = Selector(selections=("A", "B"), use_number=False)
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[Gap(is_selectable=True), selector, plain]))
+    ui.render()
+
+    def texts():
+        return [drawn.text for drawn, _ in ui.renderer._menu_tree.element_rects if isinstance(drawn, NormalText)]
+
+    assert "2" in texts() and "/4" in texts() and "/2" not in texts()
+    assert hit_rect_of(ui, selector).width == hit_rect_of(ui, plain).width
+
+    selector.next()
+    ui.render()
+    assert "3" in texts()
+
+
+def test_selector_counter_mutes_the_total_and_marks_a_changed_position():
+    selector = Selector(selections=("A", "B", "C", "D"), value=1)
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[Gap(is_selectable=True), selector]))
+    selector.next()
+    ui.render()
+
+    colors = {drawn.text: drawn.text_color for drawn, _ in ui.renderer._menu_tree.element_rects if isinstance(drawn, NormalText)}
+    assert colors["3"] == selector.altered_selection_color
+    assert colors["/4"] == selector.count_text.text_color
+
 
 def bar_margins(surface, box, color):
     """Gaps between the inside of a border and the block of ``color`` within it, as left, right, top, bottom."""
