@@ -90,8 +90,8 @@ def main() -> None:
                 elif isinstance(interface.top(), Pause):
                     interface.pop()
 
-        # Update the game only while no menu is open
-        if not interface.is_open:
+        # The ball keeps rolling behind the see-through title screen, and stops under every other menu
+        if not interface.is_open or isinstance(interface.top(), Start):
             ball += velocity * dt
             width, height = screen.get_size()
             if ball.x < 20 or ball.x > width - 20:

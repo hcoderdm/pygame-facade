@@ -22,7 +22,7 @@ class Difficulty(Enum):
 def test_start_selects_its_first_button():
     menu = Start()
 
-    assert menu.get_selected_element().label.text == "Start Game"
+    assert menu.get_selected_element().label.text == "PLAY"
 
 
 def test_settings_builds_an_editor_per_uppercase_attribute():

@@ -30,7 +30,6 @@ from facade import (
     InputField,
     JustifyType,
     Measure,
-    MeasureType,
     Menu,
     NATIVE_FONT_SIZE,
     TRANSPARENT,
@@ -48,12 +47,23 @@ from facade import (
 )
 
 
+_TITLE_COLUMN_PW = 296.0  # Everything on the title screen shares the width of its buttons
+
+# What the library can do, one line each at the title column's width
+_DEMO_NOTES = (
+    "MENUS RENDERED FROM AN ELEMENT TREE",
+    "OPTIMIZED RERENDERS FROM CONTENT CHANGES",
+    "CUSTOMIZABLE THEME WITH COLOR ROLES",
+    "DEBUG FUNCTIONALITY",
+)
+
+
 def _title_button(text: str, action: Callable) -> Button:
     """A button drawn at twice the native font size, with its box scaled to match."""
     return Button(
         label=Button.ButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
         action=action,
-        size=(296.0, 44.0),
+        size=(_TITLE_COLUMN_PW, 44.0),
         padding=(12.0, 12.0),
     )
 
@@ -63,64 +73,42 @@ def _title_primary_button(text: str, action: Callable) -> PrimaryButton:
     return PrimaryButton(
         label=PrimaryButton.PrimaryButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
         action=action,
-        size=(296.0, 44.0),
+        size=(_TITLE_COLUMN_PW, 44.0),
     )
 
 
 @dataclass(kw_only=True)
 class Start(Menu):
-    """Full-screen start/title menu."""
+    """
+    Title screen: one column centred on the page and drawn over the table,
+    which shows through it with the ball still rolling. The title, the menu,
+    then what the demo shows off.
+    """
 
     on_start: Callable = field(default=lambda: None)
     on_quit: Callable = field(default=lambda: None)
     on_settings: Callable = field(default=lambda: None)
     on_about: Callable = field(default=lambda: None)
 
+    root_alignment: AlignmentType = AlignmentType.CENTER
+    root_background_alpha: int = 0xA0  # Lets the table and ball show through
+
     def __post_init__(self):
+        title_size = NATIVE_FONT_SIZE * 4
+        # One font pixel of shadow per 14px of type keeps it on the font's grid
+        shadow_offset = title_size / NATIVE_FONT_SIZE
         self.root_elements = [
-            Gap(size=(1.0, 0.10), size_measure=MeasureType.RELATIVE),
-            HorizontalDivision(
-                gap=(12.0, 0.0),
-                background_color=ThemeColorType.SURFACE_DISPLAY,
-                padding=(24.0, 32.0),
-                border_color=ThemeColorType.HEADING,
-                border_thickness=2,
-                shadow_color=ThemeColorType.HEADING_SHADOW,
-                shadow_alpha=0x60,
-                elements=[
-                    TitleText(
-                        text="A",
-                        font_size=NATIVE_FONT_SIZE * 2,
-                        text_color=ThemeColorType.HEADING,
-                        text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING,
-                    ),
-                    TitleText(
-                        text="Mountain",
-                        text_color=ThemeColorType.HEADING,
-                        shadow_color=ThemeColorType.HEADING_SHADOW,
-                        shadow_offset=(3.0, 3.0),
-                        text_decorations=TextDecorationType.UNDERLINE,
-                    ),
-                    TitleText(
-                        text="OF",
-                        font_size=NATIVE_FONT_SIZE * 2,
-                        text_color=ThemeColorType.HEADING,
-                        text_decorations=TextDecorationType.ITALIC | TextDecorationType.ANTIALIASING,
-                    ),
-                    TitleText(
-                        text="Tiles",
-                        text_color=ThemeColorType.HEADING,
-                        shadow_color=ThemeColorType.HEADING_SHADOW,
-                        shadow_offset=(3.0, 3.0),
-                    ),
-                ],
-            ),
-            Gap(size=(0, 48)),
-            _title_primary_button("Start Game", self.on_start),
-            Gap(size=(0, 12)),
+            TitleText(text="FACADE", font_size=title_size, shadow_color=ThemeColorType.HEADING_SHADOW, shadow_offset=(shadow_offset, shadow_offset)),
+            Gap(size=(0, 6)),
+            NormalText(text="AN EXAMPLE OF THE FACADE LIBRARY", text_color=ThemeColorType.TEXT_MUTED),
+            Gap(size=(0, 22)),
+            _title_primary_button("PLAY", self.on_start),
             _title_button("SETTINGS", self.on_settings),
             _title_button("ABOUT", self.on_about),
             _title_button("QUIT", self.on_quit),
+            Gap(size=(0, 18)),
+            SectionHeader(label=SectionHeader.HeaderText(text="INSIDE FACADE"), size=(_TITLE_COLUMN_PW, 0.0)),
+            BulletList(size=(_TITLE_COLUMN_PW, 0.0), paragraphs=list(_DEMO_NOTES)),
         ]
         super().__post_init__()
 
