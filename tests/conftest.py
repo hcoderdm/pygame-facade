@@ -1,5 +1,5 @@
 """
-Shared fixtures. Tests run headless with SDL's dummy video driver.
+conftest.py
 """
 
 import os
@@ -15,6 +15,6 @@ import pytest
 def display():
     """A window must exist before rendering, as in a real game."""
     pygame.init()
-    surface = pygame.display.set_mode((1, 1))
-    yield surface
+    surf = pygame.display.set_mode((1, 1))
+    yield surf
     pygame.quit()

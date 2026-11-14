@@ -4,15 +4,15 @@ renderer.py
 
 from __future__ import annotations
 
-import pygame
-
 from collections import OrderedDict
 from collections.abc import Hashable
 from dataclasses import dataclass, field, replace
 from functools import singledispatchmethod
 import math
 import time
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
+
+import pygame
 
 from .assets import FontManager, ImageManager
 from .elements import (
@@ -46,10 +46,8 @@ from .elements import (
     Toggle,
     VerticalDivision,
 )
-
 from .theme import DEFAULT_THEME, Theme, ThemeColorType
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .menus import Menu
 
@@ -70,14 +68,14 @@ _DEBUG_HIT_RECT_COLOR = "#00FF80FF"
 
 _ROTATION_DEGREES = {RotationType.LEFT: 90, RotationType.RIGHT: -90, RotationType.UPTURNED: 180}
 
-_PART_INSET_PX = 3  # Room around each arrow, matching the toggle's inset
-_REVEAL_MARGIN_PH = 8  # Room kept above or below an element scrolled into view by the keys
+_PART_INSET_PX = 3  # Room around each arrow, matching the toggle's inset.
+_REVEAL_MARGIN_PH = 8  # Room kept above or below an element scrolled into view by the keys.
 
 
 # -----------------------------------------------------------------------------
 
 
-class _SurfaceCache:
+class SurfaceCache:
     """Least-recently-used cache bounded by the pixel memory of its surfaces."""
 
     def __init__(self, max_bytes: int) -> None:
@@ -124,7 +122,7 @@ class _SurfaceCache:
         self._bytes = 0
 
 
-class _TextCache(_SurfaceCache):
+class TextCache(SurfaceCache):
     """Rendered strings, keyed by every ``Text`` field that reaches the pixels plus the wrap width."""
 
     def __init__(self, fonts: FontManager, max_bytes: int = _TEXT_CACHE_BYTES) -> None:
@@ -169,11 +167,11 @@ class _TextCache(_SurfaceCache):
         return surf, layout_rect
 
     def _get_metrics(self, text: Text, font: pygame.font.Font, is_antialiased: bool) -> tuple[int, int, int]:
-        """Blank rows above a capital, blank rows below the baseline of one line, and spacing after a glyph."""
+        # Blank rows above a capital, blank rows below the baseline of one line, and spacing after a glyph.
         key = (text.font_name, text.font_size, font.bold, font.italic, is_antialiased)
         metrics = self._metrics_cache.get(key)
         if metrics is None:
-            # A capital H has no overshoot or descender, so its ink marks the cap height and the baseline
+            # A capital H has no overshoot or descender, so its ink marks the cap height and the baseline.
             glyph_surf = font.render("H", is_antialiased, (255, 255, 255)).convert_alpha()
             ink_rects = pygame.mask.from_surface(glyph_surf).get_bounding_rects()
             if ink_rects:
@@ -185,7 +183,7 @@ class _TextCache(_SurfaceCache):
         return metrics
 
 
-class _BoxCache(_SurfaceCache):
+class BoxCache(SurfaceCache):
     """Element boxes, one surface shared by every element with the same geometry and colours."""
 
     def __init__(self, max_bytes: int = _BOX_CACHE_BYTES) -> None:
@@ -203,7 +201,7 @@ class _BoxCache(_SurfaceCache):
         border_rect = pygame.Rect(margin_pw, margin_ph, pw - 2 * margin_pw, ph - 2 * margin_ph)
         surf = _make_surf(pw, ph)
         if border_color is not None:
-            # An outline, not a filled rect: with no background the inside must stay transparent
+            # An outline, not a filled rect: with no background the inside must stay transparent.
             pygame.draw.rect(surf, border_color, border_rect, border_thickness)
         if background_color is not None:
             pygame.draw.rect(surf, background_color, border_rect.inflate(-2 * border_thickness, -2 * border_thickness))
@@ -211,7 +209,7 @@ class _BoxCache(_SurfaceCache):
         return surf
 
 
-class _ShadowCache(_SurfaceCache):
+class ShadowCache(SurfaceCache):
     """Shadows of cached surfaces, keyed by the identity of the source and the shadow style."""
 
     def __init__(self, max_bytes: int = _SHADOW_CACHE_BYTES) -> None:
@@ -243,7 +241,7 @@ class _ShadowCache(_SurfaceCache):
 
 
 @dataclass(kw_only=True, repr=False)
-class _SegmentStrip(Element):
+class SegmentStrip(Element):
     """The segments of a ``ProgressBar`` or ``Slider``, built by the renderer while composing."""
 
     count: int
@@ -262,7 +260,7 @@ class _SegmentStrip(Element):
 
 
 @dataclass(eq=False)
-class _MenuTree:
+class MenuTree:
     """One menu composed at one window size and render version, and everything made from it."""
 
     class Space(NamedTuple):
@@ -277,8 +275,8 @@ class _MenuTree:
 
         element: Element
         content_surf: pygame.Surface | None = None
-        children: list[_MenuTree.Node] = field(default_factory=list)
-        content_rect: pygame.Rect | None = None  # Part of content_surf that layout uses; the whole surface when None
+        children: list[MenuTree.Node] = field(default_factory=list)
+        content_rect: pygame.Rect | None = None  # Part of content_surf that layout uses; the whole surface when None.
 
         hit_target: Element | None = None
         box_surf: pygame.Surface | None = None
@@ -308,7 +306,7 @@ class _MenuTree:
     menu: Menu
     size: tuple[int, int]
     render_version: int
-    selection_id: str | None  # The element drawn with the focused look: the hovered one or the keys' selection
+    selection_id: str | None  # The element drawn with the focused look: the hovered one or the keys' selection.
     pointer_part: str | None = None
 
     root: Node | None = None
@@ -349,11 +347,11 @@ class MenuRenderer:
         self.images: ImageManager = ImageManager()
 
         self._theme: Theme = theme
-        self._text_cache = _TextCache(self.fonts)
-        self._box_cache = _BoxCache()
-        self._shadow_cache = _ShadowCache()
+        self._text_cache = TextCache(self.fonts)
+        self._box_cache = BoxCache()
+        self._shadow_cache = ShadowCache()
 
-        self._menu_tree: _MenuTree | None = None
+        self._menu_tree: MenuTree | None = None
 
     # -------------------------------------------------------------------------
 
@@ -366,7 +364,7 @@ class MenuRenderer:
     def theme(self, theme: Theme) -> None:
         if theme != self._theme:
             self._theme = theme
-            # The caches key on drawn colours, so they stay valid; only the composed tree is out of date
+            # The caches key on drawn colours, so they stay valid; only the composed tree is out of date.
             self._menu_tree = None
 
     def render(self, menu: Menu, size: tuple[int, int]) -> pygame.Surface:
@@ -378,16 +376,16 @@ class MenuRenderer:
 
     # -------------------------------------------------------------------------
 
-    def _compose_tree(self, menu: Menu, size: tuple[int, int]) -> _MenuTree:
-        tree = _MenuTree(menu, size, Element._render_version, menu.get_lit_id(), menu.get_pointer_part())
-        tree.root = self._compose_node(menu._div, tree, _MenuTree.Space(range(size[0], size[0]), range(size[1], size[1])))
+    def _compose_tree(self, menu: Menu, size: tuple[int, int]) -> MenuTree:
+        tree = MenuTree(menu, size, Element._render_version, menu.get_lit_id(), menu.get_pointer_part())
+        tree.root = self._compose_node(menu._div, tree, MenuTree.Space(range(size[0], size[0]), range(size[1], size[1])))
         return tree
 
-    def _compose_node(self, element: Element, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _compose_node(self, element: Element, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         if not element.is_visible:
-            return _MenuTree.Node(element, hit_target=element)
+            return MenuTree.Node(element, hit_target=element)
         if isinstance(element, ProgressBar):
-            # A bar is two ordinary boxes side by side; clicks on either still reach the bar itself
+            # A bar is two ordinary boxes side by side; clicks on either still reach the bar itself.
             node = self._compose_node(self._make_bar_row(element, tree, space), tree, space)
             node.hit_target = element
             return node
@@ -410,15 +408,15 @@ class MenuRenderer:
         if element.overflow == OverflowType.EXTEND:
             range_pw = range(inner_pw, max(0, space.range_pw.stop - decor_pw))
             range_ph = range(inner_ph, max(0, space.range_ph.stop - decor_ph))
-            inner_space = _MenuTree.Space(range_pw, range_ph)
+            inner_space = MenuTree.Space(range_pw, range_ph)
         elif element.overflow == OverflowType.OVERFLOW:
             range_pw = range(inner_pw, inner_pw + 999)
             range_ph = range(inner_ph, inner_ph + 999)
-            inner_space = _MenuTree.Space(range_pw, range_ph)
+            inner_space = MenuTree.Space(range_pw, range_ph)
         else:
             range_pw = range(inner_pw, inner_pw)
             range_ph = range(inner_ph, inner_ph)
-            inner_space = _MenuTree.Space(range_pw, range_ph)
+            inner_space = MenuTree.Space(range_pw, range_ph)
 
         node = self._compose_content(element, tree, inner_space)
         content_pw, content_ph = node.extent()
@@ -453,11 +451,11 @@ class MenuRenderer:
         return node
 
     @singledispatchmethod
-    def _compose_content(self, element: Element, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        return _MenuTree.Node(element)
+    def _compose_content(self, element: Element, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
+        return MenuTree.Node(element)
 
     @_compose_content.register(Division)
-    def _(self, element: Division, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: Division, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         gap_pw, gap_ph = self._resolve_measure(element.gap, element.gap_measure, space)
         is_vertical = isinstance(element, VerticalDivision)
         children = [self._compose_node(child, tree, space) for child in element.elements if child.is_visible]
@@ -484,43 +482,43 @@ class MenuRenderer:
             else:
                 flow_px += child.pw + gap_pw
 
-        return _MenuTree.Node(element, children=children)
+        return MenuTree.Node(element, children=children)
 
     @_compose_content.register(Gap)
-    def _(self, element: Gap, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: Gap, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         gap_pw, gap_ph = space.range_pw.start, space.range_ph.start
         gap_color = self._get_color(element.background_color, element.background_alpha)
         if gap_pw == 0 or gap_ph == 0 or gap_color.a == 0:
-            return _MenuTree.Node(element)
+            return MenuTree.Node(element)
         gap_surf = _make_surf(gap_pw, gap_ph)
         gap_surf.fill(gap_color)
         gap_surf.set_alpha(element.background_alpha)
-        return _MenuTree.Node(element, content_surf=gap_surf)
+        return MenuTree.Node(element, content_surf=gap_surf)
 
     @_compose_content.register(Fill)
-    def _(self, element: Fill, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        return _MenuTree.Node(element, content_surf=_make_surf(space.range_pw.stop, space.range_ph.stop))
+    def _(self, element: Fill, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
+        return MenuTree.Node(element, content_surf=_make_surf(space.range_pw.stop, space.range_ph.stop))
 
     @_compose_content.register(Text)
-    def _(self, element: Text, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: Text, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         text_surf, layout_rect = self._text_cache.get_surf(element, space.range_pw.stop, self._theme)
-        return _MenuTree.Node(element, content_surf=text_surf, content_rect=layout_rect)
+        return MenuTree.Node(element, content_surf=text_surf, content_rect=layout_rect)
 
     @_compose_content.register(Image)
-    def _(self, element: Image, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        return _MenuTree.Node(element, content_surf=self.images.get_image(element.image_path))
+    def _(self, element: Image, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
+        return MenuTree.Node(element, content_surf=self.images.get_image(element.image_path))
 
     @_compose_content.register(TextBlock)
-    def _(self, element: TextBlock, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: TextBlock, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         wrap_pw = self._get_block_pw(space)
         paragraphs: list[Element] = [self._make_paragraph(element, paragraph, wrap_pw) for paragraph in element.paragraphs]
         body = VerticalDivision(elements=paragraphs, gap=(0.0, element.paragraph_gap_ph), justify=JustifyType.START)
-        return _MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
+        return MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
 
     @_compose_content.register(BulletList)
-    def _(self, element: BulletList, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: BulletList, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         item_pw = max(0, self._get_block_pw(space) - element.bullet_pw - element.bullet_gap_pw)
-        # The bullet is centred on the first line's capitals, whatever the font size
+        # The bullet is centred on the first line's capitals, whatever the font size.
         bullet_py = max(0, (self._measure_cap_ph(element.body_text) - element.bullet_pw) // 2)
         items = []
         for paragraph in element.paragraphs:
@@ -533,10 +531,10 @@ class MenuRenderer:
                 gap=(element.bullet_gap_pw, 0.0), justify=JustifyType.START,
             ))
         body = VerticalDivision(elements=items, gap=(0.0, element.paragraph_gap_ph), justify=JustifyType.START)
-        return _MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
+        return MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
 
     @_compose_content.register(CreditList)
-    def _(self, element: CreditList, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: CreditList, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         row_pw = self._get_block_pw(space)
         rows = []
         for role, name in element.credits:
@@ -545,14 +543,14 @@ class MenuRenderer:
             free_pw = row_pw - self._measure_text(role_text) - self._measure_text(name_text) - 2 * element.leader_gap_pw
             count = max(0, (free_pw + element.dot_gap_pw) // (element.dot_pw + element.dot_gap_pw))
             leader_pw = count * (element.dot_pw + element.dot_gap_pw) - element.dot_gap_pw if count else 0
-            # Leftover pixels go before the leader, so every leader ends the same distance from its name
+            # Leftover pixels go before the leader, so every leader ends the same distance from its name.
             parts: list[Element] = [role_text, Gap(size=(element.leader_gap_pw + free_pw - leader_pw, 0.0))]
             if count:
-                dots = _SegmentStrip(
+                dots = SegmentStrip(
                     count=count, filled=count, segment_pw=element.dot_pw, segment_ph=element.dot_pw,
                     gap_pw=element.dot_gap_pw, fill_color=element.leader_color, empty_color=element.leader_color,
                 )
-                # Dropped to the baseline so the dots run under the text, not through it
+                # Dropped to the baseline so the dots run under the text, not through it.
                 baseline_py = max(0, self._measure_cap_ph(role_text) - element.dot_pw)
                 parts += [
                     VerticalDivision(elements=[Gap(size=(0.0, baseline_py)), dots], gap=(0.0, 0.0), justify=JustifyType.START),
@@ -561,55 +559,55 @@ class MenuRenderer:
             parts.append(name_text)
             rows.append(HorizontalDivision(elements=parts, gap=(0.0, 0.0), justify=JustifyType.START))
         body = VerticalDivision(elements=rows, gap=(0.0, element.row_gap_ph), justify=JustifyType.START)
-        return _MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
+        return MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
 
     @_compose_content.register(SectionHeader)
-    def _(self, element: SectionHeader, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: SectionHeader, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         label = replace(element.label, is_wrappable=False)
         rule_pw = max(0, self._get_block_pw(space) - self._measure_text(label) - element.rule_gap_pw)
-        # Centred on the label's capitals; an odd leftover puts the extra pixel below
+        # Centred on the label's capitals; an odd leftover puts the extra pixel below.
         rule_py = max(0, (self._measure_cap_ph(label) - element.rule_ph) // 2)
         rule = VerticalDivision(
             elements=[Gap(size=(0.0, rule_py)), Gap(size=(rule_pw, element.rule_ph), background_color=element.rule_color)],
             gap=(0.0, 0.0), justify=JustifyType.START,
         )
         row = HorizontalDivision(elements=[label, rule], gap=(element.rule_gap_pw, 0.0), justify=JustifyType.START)
-        return _MenuTree.Node(element, children=[self._compose_node(row, tree, space)])
+        return MenuTree.Node(element, children=[self._compose_node(row, tree, space)])
 
-    @_compose_content.register(_SegmentStrip)
-    def _(self, element: _SegmentStrip, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    @_compose_content.register(SegmentStrip)
+    def _(self, element: SegmentStrip, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         strip_pw = element.count * element.segment_pw + max(0, element.count - 1) * element.gap_pw
         strip_surf = _make_surf(strip_pw, element.segment_ph)
         for idx in range(element.count):
             color = self._theme.get_rgba(element.fill_color if idx < element.filled else element.empty_color)
             strip_surf.fill(color, pygame.Rect(idx * (element.segment_pw + element.gap_pw), 0, element.segment_pw, element.segment_ph))
-        return _MenuTree.Node(element, content_surf=strip_surf)
+        return MenuTree.Node(element, content_surf=strip_surf)
 
     @_compose_content.register(Button)
-    def _(self, element: Button, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: Button, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         if tree.selection_id == element.id:
             element = replace(element, border_color=element.selected_border_color, label=replace(element.label, text_color=element.selected_text_color))
-        return _MenuTree.Node(element, children=[self._compose_node(element.label, tree, space)])
+        return MenuTree.Node(element, children=[self._compose_node(element.label, tree, space)])
 
     @_compose_content.register(PrimaryButton)
-    def _(self, element: PrimaryButton, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: PrimaryButton, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         is_lit = tree.selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
         label = replace(element.label, text_color=element.selected_text_color) if is_lit else element.label
-        # The bar fills the inner area, so the padding is the gap around it on every side
+        # The bar fills the inner area, so the padding is the gap around it on every side.
         bar = HorizontalDivision(
             elements=[label], size=(float(space.range_pw.start), float(space.range_ph.start)), alignment=AlignmentType.CENTER, gap=(0.0, 0.0),
             background_color=element.selected_fill_color if is_lit else element.fill_color,
         )
-        return _MenuTree.Node(eff_element, children=[self._compose_node(bar, tree, space)])
+        return MenuTree.Node(eff_element, children=[self._compose_node(bar, tree, space)])
 
     @_compose_content.register(Toggle)
-    def _(self, element: Toggle, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: Toggle, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         is_lit = tree.selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
         fill_color = element.edited_fill_color if element.is_called else element.fill_color
 
-        # The halves split the inner width, so the filled one sits the padding away from every edge
+        # The halves split the inner width, so the filled one sits the padding away from every edge.
         half_pw, half_ph = space.range_pw.start // 2, space.range_ph.start
         halves = []
         for text, is_filled in ((element.false_text, not element.value), (element.true_text, element.value)):
@@ -622,10 +620,10 @@ class MenuRenderer:
                 alignment=AlignmentType.CENTER, gap=(0.0, 0.0), background_color=background,
             ))
         row = HorizontalDivision(elements=halves, gap=(0.0, 0.0))
-        return _MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
+        return MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
 
     @_compose_content.register(Selector)
-    def _(self, element: Selector, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+    def _(self, element: Selector, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         is_lit = tree.selection_id == element.id
         eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
 
@@ -635,17 +633,17 @@ class MenuRenderer:
         left_zone = self._make_arrow_zone(element, element.left_arrow, "left", element.value == 0, is_lit, tree)
         right_zone = self._make_arrow_zone(element, element.right_arrow, "right", element.value == len(element.selections) - 1, is_lit, tree)
 
-        # The option gets a fixed slot between the arrows, so changing it never moves them
+        # The option gets a fixed slot between the arrows, so changing it never moves them.
         gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
         zones_pw = self._measure_arrow_zone(element.left_arrow) + self._measure_arrow_zone(element.right_arrow)
         slot_pw = max(0, space.range_pw.start - zones_pw - 2 * gap_pw)
         slot = HorizontalDivision(elements=[selection_text], size=(slot_pw, 0.0), alignment=AlignmentType.CENTER, gap=(0.0, 0.0))
         row = HorizontalDivision(elements=[left_zone, slot, right_zone], gap=(gap_pw, 0.0))
-        return _MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
+        return MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
 
     @_compose_content.register(InputField)
-    def _(self, element: InputField, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
-        # A field being typed into stays lit even with the pointer over empty space
+    def _(self, element: InputField, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
+        # A field being typed into stays lit even with the pointer over empty space.
         is_lit = tree.selection_id == element.id or element.is_open
         eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
 
@@ -663,7 +661,7 @@ class MenuRenderer:
         elif glyph:
             # The cursor is drawn over the start of the hint rather than after it, so the hint never moves. It comes
             # after the hint so it draws on top, shifted back by the hint's width; with no size and OVERFLOW it
-            # takes no room, and START keeps it on the hint's top row
+            # takes no room, and START keeps it on the hint's top row.
             hint_pw = self._measure_text(element.hint)
             cursor = replace(value_text, size=(0.0, 0.0), overflow=OverflowType.OVERFLOW, justify=JustifyType.START, offset=(-float(hint_pw), 0.0))
             parts.append(HorizontalDivision(elements=[element.hint, cursor], gap=(0.0, 0.0)))
@@ -671,15 +669,15 @@ class MenuRenderer:
             parts.append(element.hint)
         gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
         row = HorizontalDivision(elements=parts, gap=(gap_pw, 0.0))
-        return _MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
+        return MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
 
     # -------------------------------------------------------------------------
 
-    def _make_selector_row(self, element: Selector, space: _MenuTree.Space) -> HorizontalDivision:
-        """The selector box and its number box, together the width the selector's ``size`` gives."""
+    def _make_selector_row(self, element: Selector, space: MenuTree.Space) -> HorizontalDivision:
+        # The selector box and its number box share the width the selector's ``size`` gives.
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
         # The selector box is a copy without its number, so it is drawn as before; the row holding both is
-        # what is selected and clicked, and the copy keeps the id so it still lights with the real selector
+        # what is selected and clicked, and the copy keeps the id so it still lights with the real selector.
         selector_box = replace(
             element, size=(float(size_pw - element.box_gap_pw - element.number_pw), float(size_ph)), size_measure=MeasureType.ABSOLUTE,
             use_number=False, is_selectable=False, offset=(0.0, 0.0), margin=(0.0, 0.0), is_fixed=False,
@@ -688,7 +686,7 @@ class MenuRenderer:
         number_text = replace(element.number_text, text=position)
         if element.is_edited:
             number_text = replace(number_text, text_color=element.altered_selection_color)
-        # The layout trims the spacing after each piece of text, so 1px between them spaces them like one word
+        # The layout trims the spacing after each piece of text, so 1px between them spaces them like one word.
         number_row = HorizontalDivision(elements=[number_text, replace(element.count_text, text=count)], gap=(1.0, 0.0))
         number_box = HorizontalDivision(
             elements=[number_row], size=(float(element.number_pw), float(size_ph)), padding=element.padding, padding_measure=element.padding_measure,
@@ -704,8 +702,7 @@ class MenuRenderer:
             rotation=element.rotation, is_fixed=element.is_fixed, is_selectable=element.is_selectable,
         )
 
-    def _make_bar_row(self, element: ProgressBar, tree: _MenuTree, space: _MenuTree.Space) -> HorizontalDivision:
-        """The bar box and the number box of ``element``, styled and sized from its fields."""
+    def _make_bar_row(self, element: ProgressBar, tree: MenuTree, space: MenuTree.Space) -> HorizontalDivision:
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
         padding = self._resolve_measure(element.padding, element.padding_measure, space)
         is_selected = tree.selection_id == element.id
@@ -734,7 +731,7 @@ class MenuRenderer:
             gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
             strip_pw -= self._measure_arrow_zone(element.left_arrow) + self._measure_arrow_zone(element.right_arrow) + 2 * gap_pw
         count = max(1, element.segments)
-        strip = _SegmentStrip(
+        strip = SegmentStrip(
             count=count, filled=int(fraction * count + 0.5),
             segment_pw=max(0, (strip_pw - (count - 1) * element.segment_gap_pw) // count), segment_ph=element.segment_ph,
             gap_pw=element.segment_gap_pw, fill_color=element.altered_color if isinstance(element, Slider) and is_altered else element.fill_color, empty_color=element.empty_color,
@@ -756,8 +753,8 @@ class MenuRenderer:
         )
 
     @staticmethod
-    def _get_block_pw(space: _MenuTree.Space) -> int:
-        # A set width wins; with none, text blocks fill all the room they are given
+    def _get_block_pw(space: MenuTree.Space) -> int:
+        # A set width wins; with none, text blocks fill all the room they are given.
         return space.range_pw.start or space.range_pw.stop
 
     def _make_paragraph(self, element: TextBlock, paragraph: Paragraph, wrap_pw: int) -> VerticalDivision:
@@ -769,7 +766,7 @@ class MenuRenderer:
             for word in (span if isinstance(span, str) else span.text).split()
         ]
 
-        # Greedy wrapping on drawn widths: a word moves down when the line with it would pass wrap_pw
+        # Greedy wrapping on drawn widths: a word moves down when the line with it would pass wrap_pw.
         lines: list[list[tuple[Text, str]]] = []
         line: list[tuple[Text, str]] = []
         line_pw = 0
@@ -786,7 +783,7 @@ class MenuRenderer:
 
         rows = []
         for line in lines:
-            # Neighbouring words in one style share a Text, so a line is a few surfaces rather than one per word
+            # Neighbouring words in one style share a Text, so a line is a few surfaces rather than one per word.
             runs: list[tuple[Text, list[str]]] = []
             for style, word in line:
                 if runs and runs[-1][0] == style:
@@ -802,7 +799,7 @@ class MenuRenderer:
         return VerticalDivision(elements=rows, gap=(0.0, element.line_gap_ph), justify=JustifyType.START)
 
     def _measure_space_pw(self, text: Text) -> int:
-        # The gap a space leaves between two drawn words, including the spacing the layout trims off the first
+        # The gap a space leaves between two drawn words, including the spacing the layout trims off the first.
         return self._measure_text(replace(text, text="x x")) - 2 * self._measure_text(replace(text, text="x"))
 
     def _measure_cap_ph(self, text: Text) -> int:
@@ -812,11 +809,10 @@ class MenuRenderer:
         return _color(self._theme.get_rgba(color), alpha)
 
     def _measure_text(self, text: Text) -> int:
-        """Laid-out width of ``text`` on one line."""
         return self._text_cache.get_surf(text, 0, self._theme)[1].width
 
-    def _make_arrow_zone(self, element: Selector | Slider, arrow: Text, side: str, is_disabled: bool, is_lit: bool, tree: _MenuTree) -> HorizontalDivision:
-        # Under the pointer only the arrow on its side lights; with the keys both do
+    def _make_arrow_zone(self, element: Selector | Slider, arrow: Text, side: str, is_disabled: bool, is_lit: bool, tree: MenuTree) -> HorizontalDivision:
+        # Under the pointer only the arrow on its side lights; with the keys both do.
         if is_disabled:
             color = element.disabled_arrow_color
         elif is_lit and tree.pointer_part in (None, side):
@@ -830,7 +826,7 @@ class MenuRenderer:
 
     # -------------------------------------------------------------------------
 
-    def _render_facade(self, tree: _MenuTree) -> None:
+    def _render_facade(self, tree: MenuTree) -> None:
         root = tree.root
         assert root is not None
         facade = root.box_surf.copy() if root.box_surf is not None else _make_surf(root.pw, root.ph)
@@ -842,13 +838,13 @@ class MenuRenderer:
             self._render_node(child, tree, facade, root.inner_offset)
         tree.facade_surf = facade
 
-    def _render_node(self, node: _MenuTree.Node, tree: _MenuTree, facade: pygame.Surface, origin: tuple[int, int]) -> None:
+    def _render_node(self, node: MenuTree.Node, tree: MenuTree, facade: pygame.Surface, origin: tuple[int, int]) -> None:
         element = node.element
         if element.is_fixed:
             origin = self._align_box(element.alignment, facade.get_width(), facade.get_height(), node.pw, node.ph)
         origin_px, origin_py = origin[0] + node.offset[0], origin[1] + node.offset[1]
 
-        # A rotated subtree is rendered upright on its own surface, then turned once
+        # A rotated subtree is rendered upright on its own surface, then turned once.
         is_rotated = element.rotation != RotationType.NONE
         target = _make_surf(*node.extent()) if is_rotated else facade
         box_px, box_py = (0, 0) if is_rotated else (origin_px, origin_py)
@@ -861,7 +857,7 @@ class MenuRenderer:
                 at_px, at_py = at_px - node.content_rect.x, at_py - node.content_rect.y
             shadow_surf = self._shadow_cache.get_surf(element, surf, self._theme)
             if shadow_surf is not None:
-                shadow_px, shadow_py = self._resolve_measure(element.shadow_offset, element.shadow_offset_measure, _MenuTree.Space(range(surf.get_width()), range(surf.get_height())))
+                shadow_px, shadow_py = self._resolve_measure(element.shadow_offset, element.shadow_offset_measure, MenuTree.Space(range(surf.get_width()), range(surf.get_height())))
                 target.blit(shadow_surf, (at_px + shadow_px, at_py + shadow_py))
             target.blit(surf, (at_px, at_py))
 
@@ -887,7 +883,7 @@ class MenuRenderer:
             return
 
         # pygame.draw writes without blending, so on an opaque output the bar is
-        # rendered on its own strip and blended over the menu
+        # rendered on its own strip and blended over the menu.
         is_blended = not output.get_flags() & pygame.SRCALPHA
         strip = pygame.Surface((_SCROLLBAR_PW, output_ph), pygame.SRCALPHA) if is_blended else output
         track_px = 0 if is_blended else output.get_width() - _SCROLLBAR_PW
@@ -904,7 +900,7 @@ class MenuRenderer:
 
     # -------------------------------------------------------------------------
 
-    def _present_output(self, tree: _MenuTree) -> pygame.Surface:
+    def _present_output(self, tree: MenuTree) -> pygame.Surface:
         facade = tree.facade_surf
         assert facade is not None
         output_pw, output_ph = tree.size
@@ -917,11 +913,11 @@ class MenuRenderer:
 
         source_rect = pygame.Rect(0, scroll_py, output_pw, output_ph).clip(facade.get_rect())
         if tree.is_opaque and source_rect.size == (output_pw, output_ph):
-            # No per-pixel alpha, so the game's blit is a plain copy
+            # No per-pixel alpha, so the game's blit is a plain copy.
             output = facade.subsurface(source_rect).convert()
         else:
             # MAX against a zeroed surface copies the visible part exactly, where a
-            # normal alpha blit would darken semi-transparent pixels
+            # normal alpha blit would darken semi-transparent pixels.
             output = pygame.Surface((output_pw, output_ph), pygame.SRCALPHA)
             if source_rect.width > 0 and source_rect.height > 0:
                 output.blit(facade, (0, 0), source_rect, special_flags=pygame.BLEND_RGBA_MAX)
@@ -978,12 +974,12 @@ class MenuRenderer:
         if isinstance(element, Selector):
             box_pw = rect.width - (element.box_gap_pw + element.number_pw if element.use_number else 0)
             if px >= rect.x + box_pw:
-                return ""  # The number box only shows the position
+                return ""  # The number box only shows the position.
             return "left" if px < rect.x + box_pw // 2 else "right"
         if isinstance(element, Slider):
             bar_pw = rect.width - (element.box_gap_pw + element.number_pw if element.use_number else 0)
             if px >= rect.x + bar_pw:
-                return ""  # The number box only shows the value
+                return ""  # The number box only shows the value.
             return "left" if px < rect.x + bar_pw // 2 else "right"
         if isinstance(element, InputField):
             return "text"
@@ -1014,12 +1010,12 @@ class MenuRenderer:
             return abs(rect.centerx - current.centerx) if is_vertical else abs(rect.centery - current.centery)
 
         def is_in_line(rect: pygame.Rect) -> bool:
-            # Shares the row for a sideways move, or the column for an up or down one
+            # Shares the row for a sideways move, or the column for an up or down one.
             if is_vertical:
                 return rect.left < current.right and rect.right > current.left
             return rect.top < current.bottom and rect.bottom > current.top
 
-        # Elements in line win over nearer ones off to the side, so a row of buttons is crossed before moving down
+        # Elements in line win over nearer ones off to the side, so a row of buttons is crossed before moving down.
         ahead = [(hit, rect) for hit, rect in rects.values() if along(rect) * sign > 0]
         if ahead:
             return min(ahead, key=lambda item: (not is_in_line(item[1]), abs(along(item[1])), across(item[1])))[0]
@@ -1054,7 +1050,7 @@ class MenuRenderer:
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def _resolve_measure(value: tuple[float, float], measure: MeasureType, space: _MenuTree.Space) -> tuple[int, int]:
+    def _resolve_measure(value: tuple[float, float], measure: MeasureType, space: MenuTree.Space) -> tuple[int, int]:
         value_x, value_y = value
         if measure == MeasureType.RELATIVE:
             measure_x = math.floor(round(value_x * space.range_pw.stop, _PRECISION))
@@ -1094,7 +1090,7 @@ class DebugRenderer:
         self.use_hover_border: bool = use_hover_border
         self.use_hit_rects: bool = use_hit_rects
 
-        self._last_tree: _MenuTree | None = None
+        self._last_tree: MenuTree | None = None
         self._last_output_surf: pygame.Surface | None = None
         self._sample_start = time.perf_counter()
         self._counts = {"fps": 0, "composes": 0, "presents": 0}
@@ -1114,7 +1110,7 @@ class DebugRenderer:
         self.renderer.theme = theme
 
     def __getattr__(self, name: str) -> Any:
-        # Anything not overridden here behaves as on the wrapped renderer
+        # Anything not overridden here behaves as on the wrapped renderer.
         return getattr(self.renderer, name)
 
     # -------------------------------------------------------------------------
@@ -1142,7 +1138,7 @@ class DebugRenderer:
         if not (self.use_stats_overlay or self.use_hover_border or self.use_hit_rects):
             return output
 
-        # The wrapped renderer reuses its output between frames, so drawing on it would leak into later frames
+        # The wrapped renderer reuses its output between frames, so drawing on it would leak into later frames.
         output = output.copy()
         if self.use_hit_rects:
             self._draw_hit_rects(output, menu)
@@ -1178,7 +1174,7 @@ class DebugRenderer:
         label_surfs = [self._font.render(label, True, "#A0A8B8") for label, _ in rows]
         value_surfs = [self._font.render(value, True, "#F0F0F0") for _, value in rows]
 
-        # The default font is not monospaced, so values get their own column rather than space padding
+        # The default font is not monospaced, so values get their own column rather than space padding.
         value_px = 3 * _DEBUG_PADDING + max(surf.get_width() for surf in label_surfs)
         line_ph = self._font.get_linesize()
         overlay_pw = value_px + max(surf.get_width() for surf in value_surfs) + _DEBUG_PADDING
@@ -1197,7 +1193,7 @@ class DebugRenderer:
         if rect.width == 0 or rect.height == 0:
             return
 
-        # White minus the pixels gives their inverse, made opaque so it also shows over a transparent output
+        # White minus the pixels gives their inverse, made opaque so it also shows over a transparent output.
         inverted_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
         inverted_surf.fill("#FFFFFFFF")
         inverted_surf.blit(output.subsurface(rect), (0, 0), special_flags=pygame.BLEND_RGB_SUB)
@@ -1269,7 +1265,7 @@ class DebugRenderer:
 # -----------------------------------------------------------------------------
 
 
-# TODO: Consider moving these to their own space, out of this file
+# TODO: Consider moving these to their own space, out of this file.
 
 def _color(rgba: RGBA, alpha: int = 0xFF) -> pygame.Color:
     color = pygame.Color(rgba)

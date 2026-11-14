@@ -2,16 +2,16 @@
 assets.py
 """
 
-import pygame
-
 from pathlib import Path
 from typing import Dict, Tuple
+
+import pygame
 
 
 class FontManager:
     def __init__(self) -> None:
-        self._paths: Dict[str, Path] = {}  # family -> file path
-        self._cache: Dict[Tuple[str | None, int], pygame.font.Font] = {}  # (family, size) -> Font
+        self._paths: Dict[str, Path] = {}  # family -> file path.
+        self._cache: Dict[Tuple[str | None, int], pygame.font.Font] = {}  # (family, size) -> Font.
 
     def __contains__(self, family: str) -> bool:
         return family.lower() in self._paths
@@ -51,8 +51,7 @@ class ImageManager:
         self._paths: Dict[str, Path] = {}
         self._cache: Dict[str, pygame.Surface] = {}
 
-    @property
-    def placeholder(self) -> pygame.Surface:
+    def get_placeholder(self) -> pygame.Surface:
         if not self._placeholder:
             surf = pygame.Surface((32, 32), pygame.SRCALPHA).convert_alpha()
             surf.fill((255, 0, 255, 255))
@@ -78,7 +77,7 @@ class ImageManager:
             surf = pygame.image.load(path)
             surf = surf.convert_alpha()
         except Exception:
-            surf = self.placeholder
+            surf = self.get_placeholder()
         self._cache[key] = surf
 
     def clear_paths(self) -> None:

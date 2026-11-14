@@ -1,10 +1,5 @@
 """
 menus.py
-
-The demo's menus. Each is a ``Menu`` subclass that fills ``root_elements``
-in ``__post_init__`` from its callback fields; nothing here is part of the
-facade package, so a game is free to define screens that look nothing like
-these.
 """
 
 from __future__ import annotations
@@ -47,9 +42,9 @@ from facade import (
 )
 
 
-_TITLE_COLUMN_PW = 296.0  # Everything on the title screen shares the width of its buttons
+_TITLE_COLUMN_PW = 296.0  # Everything on the title screen shares the width of its buttons.
 
-# What the library can do, one line each at the title column's width
+# What the library can do, one line each at the title column's width.
 _DEMO_NOTES = (
     "MENUS RENDERED FROM AN ELEMENT TREE",
     "OPTIMIZED RERENDERS FROM CONTENT CHANGES",
@@ -57,24 +52,10 @@ _DEMO_NOTES = (
     "DEBUG FUNCTIONALITY",
 )
 
-
-def _title_button(text: str, action: Callable) -> Button:
-    """A button drawn at twice the native font size, with its box scaled to match."""
-    return Button(
-        label=Button.ButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
-        action=action,
-        size=(_TITLE_COLUMN_PW, 44.0),
-        padding=(12.0, 12.0),
-    )
-
-
-def _title_primary_button(text: str, action: Callable) -> PrimaryButton:
-    """The title screen's main action, the same size as its other buttons."""
-    return PrimaryButton(
-        label=PrimaryButton.PrimaryButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
-        action=action,
-        size=(_TITLE_COLUMN_PW, 44.0),
-    )
+_COLUMN_PW = 290.0  # The width of a settings row: a label, a gap and an input.
+_PANEL_PADDING = 16.0
+_SECTION_GAP_PH = 12.0  # Empty space between the heading, each box and the button, shadows included.
+_PANEL_SHADOW_PH = 3.0
 
 
 @dataclass(kw_only=True)
@@ -91,11 +72,11 @@ class Start(Menu):
     on_about: Callable = field(default=lambda: None)
 
     root_alignment: AlignmentType = AlignmentType.CENTER
-    root_background_alpha: int = 0xA0  # Lets the table and ball show through
+    root_background_alpha: int = 0xA0  # Lets the table and ball show through.
 
     def __post_init__(self):
         title_size = NATIVE_FONT_SIZE * 4
-        # One font pixel of shadow per 14px of type keeps it on the font's grid
+        # One font pixel of shadow per 14px of type keeps it on the font's grid.
         shadow_offset = title_size / NATIVE_FONT_SIZE
         self.root_elements = [
             TitleText(text="FACADE", font_size=title_size, shadow_color=ThemeColorType.HEADING_SHADOW, shadow_offset=(shadow_offset, shadow_offset)),
@@ -126,11 +107,11 @@ class Pause(Menu):
     on_exit: Callable = field(default=lambda: None)
 
     root_alignment: AlignmentType = AlignmentType.CENTER
-    root_background_alpha: int = 0x60  # Dims the table a little; the panel itself is nearly solid
+    root_background_alpha: int = 0x60  # Dims the table a little; the panel itself is nearly solid.
 
     def __post_init__(self):
         title_size = NATIVE_FONT_SIZE * 2
-        # One font pixel of shadow per 14px of type keeps it on the font's grid
+        # One font pixel of shadow per 14px of type keeps it on the font's grid.
         shadow_offset = title_size / NATIVE_FONT_SIZE
         panel = VerticalDivision(
             padding=(18.0, 18.0),
@@ -145,7 +126,7 @@ class Pause(Menu):
                 Button(label=Button.ButtonText(text="RESUME"), action=self.on_resume),
                 Button(label=Button.ButtonText(text="RESTART"), action=self.on_restart),
                 Gap(size=(0, 6)),
-                SectionHeader(label=SectionHeader.HeaderText(text="TO TITLE"), size=(148.0, 0.0)),  # As wide as the buttons
+                SectionHeader(label=SectionHeader.HeaderText(text="TO TITLE"), size=(148.0, 0.0)),  # As wide as the buttons.
                 PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="EXIT"), action=self.on_exit),
             ],
         )
@@ -168,12 +149,12 @@ class Settings(Menu):
     with no sections every setting shares one untitled box.
     """
 
-    settings: Any  # Object whose UPPERCASE attributes are edited in place
+    settings: Any  # Object whose UPPERCASE attributes are edited in place.
     sections: dict[str, list[str]] = field(default_factory=dict)
     on_return: Callable = field(default=lambda: None)
 
     root_alignment: AlignmentType = AlignmentType.CENTER
-    root_gap: Measure = (0.0, 0.0)  # Every gap is a Gap below, so the heading's can differ
+    root_gap: Measure = (0.0, 0.0)  # Every gap is a Gap below, so the heading's can differ.
 
     def __post_init__(self):
         config = self.settings
@@ -215,7 +196,7 @@ class Settings(Menu):
             return _apply
 
         def _label(name: str) -> Element:
-            # Drawn like a read-only box, and wider than the inputs beside it
+            # Drawn like a read-only box, and wider than the inputs beside it.
             return NormalText(
                 text=name.upper().replace("_", " "),
                 size=(136.0, 22.0),
@@ -224,7 +205,7 @@ class Settings(Menu):
                 background_color=ThemeColorType.SURFACE_DISPLAY,
                 border_color=ThemeColorType.BORDER_DISPLAY,
                 border_thickness=1,
-                shadow_color=TRANSPARENT,  # Display boxes sit flat; only inputs cast a shadow
+                shadow_color=TRANSPARENT,  # Display boxes sit flat; only inputs cast a shadow.
             )
 
         def _build_editor(name: str, value: Any) -> Element:
@@ -268,7 +249,7 @@ class Settings(Menu):
             groups.append(("Other" if groups else None, leftover))
 
         heading = HeadingTwoText(text="Settings", text_decorations=TextDecorationType.UNDERLINE)
-        # As on About, each spacer adds the shadow of the part above it so the visible space is even
+        # As on About, each spacer adds the shadow of the part above it so the visible space is even.
         elements: list[Element] = [heading, Gap(size=(0.0, _SECTION_GAP_PH + heading.shadow_offset[1]))]
         for title, names in groups:
             if not names:
@@ -281,28 +262,6 @@ class Settings(Menu):
         super().__post_init__()
 
 
-_COLUMN_PW = 290.0  # The width of a settings row: a label, a gap and an input
-_PANEL_PADDING = 16.0
-_SECTION_GAP_PH = 12.0  # Empty space between the heading, each box and the button, shadows included
-_PANEL_SHADOW_PH = 3.0
-
-
-def _panel(elements: list[Element]) -> VerticalDivision:
-    """A read-only box for one section: the input panel colour, the read-only border and the shared shadow."""
-    return VerticalDivision(
-        elements=elements,
-        size=(_COLUMN_PW + 2 * (_PANEL_PADDING + 1), 0.0),
-        padding=(_PANEL_PADDING, _PANEL_PADDING),
-        gap=(0.0, 8.0),
-        background_color=ThemeColorType.SURFACE_INPUT,
-        border_thickness=1,
-        border_color=ThemeColorType.BORDER_DISPLAY,
-        shadow_color=ThemeColorType.SHADOW,
-        shadow_alpha=0xB0,
-        shadow_offset=(_PANEL_SHADOW_PH, _PANEL_SHADOW_PH),
-    )
-
-
 @dataclass(kw_only=True)
 class About(Menu):
     """About screen: a centred heading, one box per section and a centred button, all evenly spaced."""
@@ -310,7 +269,7 @@ class About(Menu):
     on_return: Callable = field(default=lambda: None)
 
     root_alignment: AlignmentType = AlignmentType.CENTER
-    root_gap: Measure = (0.0, 0.0)  # Every gap is a Gap below, so the heading's can differ
+    root_gap: Measure = (0.0, 0.0)  # Every gap is a Gap below, so the heading's can differ.
 
     def __post_init__(self):
         column = (_COLUMN_PW, 0.0)
@@ -354,7 +313,7 @@ class About(Menu):
 
         heading = HeadingTwoText(text="About", text_decorations=TextDecorationType.UNDERLINE)
         # Shadows hang below a part's layout box, so each spacer adds the shadow of the part above it.
-        # The heading's layout box already takes in its underline; its shadow drops below that
+        # The heading's layout box already takes in its underline; its shadow drops below that.
         after_heading = Gap(size=(0.0, _SECTION_GAP_PH + heading.shadow_offset[1]))
         after_panel = (0.0, _SECTION_GAP_PH + _PANEL_SHADOW_PH)
         self.root_elements = [
@@ -369,3 +328,37 @@ class About(Menu):
             Button(label=Button.ButtonText(text="RETURN"), action=self.on_return),
         ]
         super().__post_init__()
+
+
+def _title_button(text: str, action: Callable) -> Button:
+    # Twice the native font size keeps the pixel font crisp, and the box scales to match.
+    return Button(
+        label=Button.ButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
+        action=action,
+        size=(_TITLE_COLUMN_PW, 44.0),
+        padding=(12.0, 12.0),
+    )
+
+
+def _title_primary_button(text: str, action: Callable) -> PrimaryButton:
+    return PrimaryButton(
+        label=PrimaryButton.PrimaryButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
+        action=action,
+        size=(_TITLE_COLUMN_PW, 44.0),
+    )
+
+
+def _panel(elements: list[Element]) -> VerticalDivision:
+    # A read-only box for one section, so its rows read as one group.
+    return VerticalDivision(
+        elements=elements,
+        size=(_COLUMN_PW + 2 * (_PANEL_PADDING + 1), 0.0),
+        padding=(_PANEL_PADDING, _PANEL_PADDING),
+        gap=(0.0, 8.0),
+        background_color=ThemeColorType.SURFACE_INPUT,
+        border_thickness=1,
+        border_color=ThemeColorType.BORDER_DISPLAY,
+        shadow_color=ThemeColorType.SHADOW,
+        shadow_alpha=0xB0,
+        shadow_offset=(_PANEL_SHADOW_PH, _PANEL_SHADOW_PH),
+    )

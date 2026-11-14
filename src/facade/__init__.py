@@ -1,7 +1,5 @@
 """
-facade
-
-Menu and UI overlay toolkit for pygame-ce games.
+__init__.py
 """
 
 from .assets import FontManager, ImageManager
@@ -68,7 +66,7 @@ from .theme import DEFAULT_THEME, Theme, ThemeColorType, mix_rgba
 
 __all__ = [
     "Interface",
-    # Elements
+    # Elements.
     "Element",
     "SelectedModifier",
     "Division",
@@ -96,7 +94,7 @@ __all__ = [
     "Slider",
     "Selector",
     "InputField",
-    # Attribute types
+    # Attribute types.
     "RGBA",
     "TRANSPARENT",
     "Color",
@@ -109,20 +107,20 @@ __all__ = [
     "ImageTransformType",
     "OverflowType",
     "RotationType",
-    # Theme and font grid
+    # Theme and font grid.
     "Theme",
     "ThemeColorType",
     "DEFAULT_THEME",
     "mix_rgba",
     "NATIVE_FONT_SIZE",
-    # Input validators
+    # Input validators.
     "INT_REGEX",
     "FLOAT_REGEX",
     "ALPHANUMERIC_REGEX",
     "RGBA_REGEX",
-    # Menus
+    # Menus.
     "Menu",
-    # Menu stack and input
+    # Menu stack and input.
     "MenuManager",
     "handle_menu_mousemotion",
     "handle_menu_mousebuttondown",
@@ -130,7 +128,7 @@ __all__ = [
     "handle_menu_mousewheel",
     "handle_menu_keydown",
     "handle_menu_textinput",
-    # Rendering
+    # Rendering.
     "MenuRenderer",
     "DebugRenderer",
     "FontManager",

@@ -22,11 +22,6 @@ ALPHANUMERIC_REGEX = r"^[A-Za-z0-9]+$"
 RGBA_REGEX = r"^#[0-9a-fA-F]{8}$"
 BOOL_REGEX = r"^[01]$"
 
-RGBA = Annotated[str, f"regex:{RGBA_REGEX}"]
-Measure = Annotated[tuple[float, float], ""]
-Angle = Annotated[float, "radians", "range: [0, 2π]"]
-Color = RGBA | ThemeColorType  # A fixed colour, or a role the active theme decides
-
 TRANSPARENT: RGBA = "#00000000"
 BLACK: RGBA = "#000000FF"
 RED: RGBA = "#FF0000FF"
@@ -38,17 +33,24 @@ CYAN: RGBA = "#00FFFFFF"
 WHITE: RGBA = "#FFFFFFFF"
 
 # The bundled pixel font draws one font pixel per screen pixel at 14px, and stays
-# crisp only at whole multiples of it; other sizes give uneven strokes
+# crisp only at whole multiples of it; other sizes give uneven strokes.
 NATIVE_FONT_SIZE: int = 14
 
-# Every input shares one box: 8px capitals with 6px of padding and a 1px border on each side
+# Every input shares one box: 8px capitals with 6px of padding and a 1px border on each side.
 _CONTROL_SIZE: Measure = (148.0, 22.0)
 _CONTROL_PADDING: Measure = (6.0, 6.0)
 _CONTROL_SHADOW_ALPHA: int = 0xB0
-# Boxes split into parts keep 3px between the border and each part, like the toggle's filled half
+# Boxes split into parts keep 3px between the border and each part, like the toggle's filled half.
 _PART_PADDING: Measure = (3.0, 3.0)
 
-_UNSET = object()  # Marks an attribute not yet assigned on an instance
+_UNSET = object()  # Marks an attribute not yet assigned on an instance.
+
+RGBA = Annotated[str, f"regex:{RGBA_REGEX}"]
+Measure = Annotated[tuple[float, float], ""]
+Angle = Annotated[float, "radians", "range: [0, 2π]"]
+Color = RGBA | ThemeColorType  # A fixed colour, or a role the active theme decides.
+# One paragraph of a TextBlock: plain text, or strings mixed with styled spans. The alias is lazy because ``Text`` comes later.
+type Paragraph = str | list[str | Text]
 
 
 # -----------------------------------------------------------------------------
@@ -113,11 +115,11 @@ class ImageTransformType(Flag):
     """"""
 
     NONE = 0
-    FLIP_X = auto()  # Flip sprite horizontally
-    FLIP_Y = auto()  # Flip sprite vertically
-    ROTATE_CCW_90 = auto()  # Rotate 90 degrees counterclockwise
-    ROTATE_CCW_180 = auto()  # Rotate 180 degrees counterclockwise
-    ROTATE_CCW_270 = auto()  # Rotate 270 degrees counterclockwise
+    FLIP_X = auto()  # Flip sprite horizontally.
+    FLIP_Y = auto()  # Flip sprite vertically.
+    ROTATE_CCW_90 = auto()  # Rotate 90 degrees counterclockwise.
+    ROTATE_CCW_180 = auto()  # Rotate 180 degrees counterclockwise.
+    ROTATE_CCW_270 = auto()  # Rotate 270 degrees counterclockwise.
 
 
 class OverflowType(Enum):
@@ -181,7 +183,7 @@ class Element(ABC):
     background_color: Color = WHITE
     background_alpha: int = 0xFF
 
-    border_thickness: int = 0  # Width of border in pixels, 0 is no border
+    border_thickness: int = 0  # Width of border in pixels, 0 is no border.
     border_color: Color = TRANSPARENT
     border_alpha: int = 0xFF
 
@@ -191,22 +193,22 @@ class Element(ABC):
     shadow_offset: Measure = (3.0, 3.0)
     shadow_offset_measure: MeasureType = MeasureType.ABSOLUTE
 
-    is_selectable: bool = True  # Whether the element can be selected for interaction
-    is_visible: bool = True  # Whether the element should be rendered
+    is_selectable: bool = True
+    is_visible: bool = True
     is_fixed: bool = False
 
     _render_version: ClassVar[int] = 0
 
     # Element dataclasses are declared with repr=False; otherwise @dataclass
     # would generate a field-by-field __repr__ for every subclass, replacing
-    # this one and printing whole element trees
+    # this one and printing whole element trees.
     def __repr__(self) -> str:
         return f"{type(self).__qualname__}(id={self.id!r})"
 
     def __setattr__(self, name, value):
         # Only a change to an attribute the instance already has is an edit.
         # The first assignment of each field, in __init__ or replace(), is
-        # construction: creating elements must not invalidate render caches
+        # construction: creating elements must not invalidate render caches.
         current = self.__dict__.get(name, _UNSET)
         if current is not _UNSET and current is not value and current != value:
             Element._render_version += 1
@@ -241,13 +243,13 @@ class Division(Element):
 
     elements: list[Element] = field(default_factory=lambda: [])
 
-    gap: Measure = (4.0, 4.0)  # Spacing between internal elements
+    gap: Measure = (4.0, 4.0)  # Spacing between internal elements.
     gap_measure: MeasureType = MeasureType.ABSOLUTE
 
     background_color: Color = TRANSPARENT
     shadow_color: Color = TRANSPARENT
 
-    is_selectable: bool = False  # Containers are not directly selectable
+    is_selectable: bool = False  # Containers are not directly selectable.
     is_expandable: bool = False
 
 
@@ -322,21 +324,18 @@ class Text(Element):
     """
     """"""
 
-    text: str = ""  # Text content to display
+    text: str = ""
     text_color: Color = ThemeColorType.TEXT_NORMAL
-    text_background: Color = TRANSPARENT  # Highlight color
+    text_background: Color = TRANSPARENT  # Highlight color.
     text_alpha: int = 0xFF
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
-    font_name: str = "editundo.ttf"  # Font family filename for text rendering
-    font_size: int = NATIVE_FONT_SIZE  # Font size in pixels for text rendering
+    font_name: str = "editundo.ttf"
+    font_size: int = NATIVE_FONT_SIZE
 
     background_color: Color = TRANSPARENT
-    is_selectable: bool = False  # Static labels are not selectable
+    is_selectable: bool = False  # Static labels are not selectable.
     is_wrappable: bool = False
-
-
-Paragraph = str | list[str | Text]  # One paragraph of a TextBlock: plain text, or strings mixed with styled spans
 
 
 @dataclass(kw_only=True, repr=False)
@@ -348,7 +347,7 @@ class NormalText(Text):
 
     font_size: int = NATIVE_FONT_SIZE
     text_color: Color = ThemeColorType.TEXT_NORMAL
-    # Plain weight: pygame's synthetic bold thickens the pixel font's strokes
+    # Plain weight: pygame's synthetic bold thickens the pixel font's strokes.
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
@@ -391,7 +390,7 @@ class HeadingOneText(Text):
 
     text_color: Color = ThemeColorType.HEADING
     shadow_color: Color = ThemeColorType.HEADING_SHADOW
-    shadow_offset: Measure = (4.0, 4.0)  # One font pixel at this size
+    shadow_offset: Measure = (4.0, 4.0)  # One font pixel at this size.
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
 
@@ -431,19 +430,19 @@ class HeadingThreeText(Text):
 class Image(Element):
     """"""
 
-    image_path: str  # Path to the sprite image file
+    image_path: str  # Path to the sprite image file.
 
-    scale: tuple[float, float] = (1.0, 1.0)  # Scale factors for image resizing
-    transform: ImageTransformType = ImageTransformType.NONE  # Built-in transformation flags for flipping/rotating
-    tint: RGBA = TRANSPARENT  # Color tint (RGBA) applied to image
-    alpha: float = 1.0  # Transparency level (0.0 = transparent, 1.0 = opaque)
+    scale: tuple[float, float] = (1.0, 1.0)  # Scale factors for image resizing.
+    transform: ImageTransformType = ImageTransformType.NONE  # Built-in transformation flags for flipping/rotating.
+    tint: RGBA = TRANSPARENT  # Color tint (RGBA) applied to image.
+    alpha: float = 1.0  # Transparency level (0.0 = transparent, 1.0 = opaque).
 
     alignment: AlignmentType = AlignmentType.BOTTOMRIGHT
 
     is_fixed: bool = True
     background_color: Color = TRANSPARENT
 
-    is_selectable: bool = False  # Images are not selectable
+    is_selectable: bool = False  # Images are not selectable.
 
 
 @dataclass(kw_only=True, repr=False)
@@ -475,7 +474,7 @@ class TextBlock(Element):
 
     paragraphs: list[Paragraph] = field(default_factory=list)
     body_text: Text = field(default_factory=BodyText)
-    line_gap_ph: int = 6  # From the baseline of one line to the capitals of the next
+    line_gap_ph: int = 6  # From the baseline of one line to the capitals of the next.
     paragraph_gap_ph: int = 14
 
     background_color: Color = TRANSPARENT
@@ -493,7 +492,7 @@ class BulletList(TextBlock):
     paragraph_gap_ph: int = 8
     bullet_color: Color = ThemeColorType.HEADING
     bullet_pw: int = 4
-    bullet_gap_pw: int = 6  # Between the bullet and the item's text
+    bullet_gap_pw: int = 6  # Between the bullet and the item's text.
 
 
 @dataclass(kw_only=True, repr=False)
@@ -513,14 +512,14 @@ class CreditList(Element):
     class NameText(NormalText):
         """The style of each name."""
 
-    credits: list[tuple[str, str]] = field(default_factory=list)  # (role, name) pairs
+    credits: list[tuple[str, str]] = field(default_factory=list)  # (role, name) pairs.
     role_text: Text = field(default_factory=RoleText)
     name_text: Text = field(default_factory=NameText)
 
     leader_color: Color = ThemeColorType.BORDER_DISPLAY
-    dot_pw: int = 2  # Each dot is square
+    dot_pw: int = 2  # Each dot is square.
     dot_gap_pw: int = 2
-    leader_gap_pw: int = 6  # Kept clear between the leader and the text on either side
+    leader_gap_pw: int = 6  # Kept clear between the leader and the text on either side.
     row_gap_ph: int = 6
 
     background_color: Color = TRANSPARENT
@@ -543,7 +542,7 @@ class SectionHeader(Element):
     label: Text = field(default_factory=HeaderText)
     rule_color: Color = ThemeColorType.BORDER_DISPLAY
     rule_ph: int = 2
-    rule_gap_pw: int = 6  # Between the label and the rule
+    rule_gap_pw: int = 6  # Between the label and the rule.
 
     background_color: Color = TRANSPARENT
     is_selectable: bool = False
@@ -563,19 +562,19 @@ class ProgressBar(Element):
     class NumberText(NormalText):
         """The number in the box beside the bar."""
 
-    value: float = 0.0  # Current value; values outside the range are clamped when drawn
-    range: tuple[float, float] = (0.0, 1.0)  # Values drawn as an empty and a full bar
+    value: float = 0.0  # Current value; values outside the range are clamped when drawn.
+    range: tuple[float, float] = (0.0, 1.0)  # Values drawn as an empty and a full bar.
 
-    segments: int = 10  # The segments share whatever width the bar box has
+    segments: int = 10  # The segments share whatever width the bar box has.
     segment_gap_pw: int = 2
-    segment_ph: int = 8  # The height of a capital at the native font size
+    segment_ph: int = 8  # The height of a capital at the native font size.
     fill_color: Color = ThemeColorType.FILL
     empty_color: Color = ThemeColorType.SURFACE_INPUT
 
     number_text: Text = field(default_factory=NumberText)
-    value_format: str = "{fraction:.0%}"  # str.format pattern given ``value`` and ``fraction``
-    number_pw: int = 40  # Fits "100%"
-    box_gap_pw: int = 6  # Between the bar box and the number box
+    value_format: str = "{fraction:.0%}"  # str.format pattern given ``value`` and ``fraction``.
+    number_pw: int = 40  # Fits "100%".
+    box_gap_pw: int = 6  # Between the bar box and the number box.
     use_number: bool = True
 
     size: Measure = _CONTROL_SIZE
@@ -584,7 +583,7 @@ class ProgressBar(Element):
     background_color: Color = ThemeColorType.SURFACE_DISPLAY
     border_color: Color = ThemeColorType.BORDER_DISPLAY
     border_thickness: int = 1
-    shadow_color: Color = TRANSPARENT  # Display boxes sit flat; only inputs cast a shadow
+    shadow_color: Color = TRANSPARENT  # Display boxes sit flat; only inputs cast a shadow.
     shadow_alpha: int = _CONTROL_SHADOW_ALPHA
 
     is_selectable: bool = False
@@ -643,8 +642,8 @@ class Button(InteractiveElement):
     class ButtonText(NormalText):
         """The label of a button."""
 
-    label: Text = field(default_factory=ButtonText)  # Text element used for rendering the button label
-    action: Callable[[], Any] = field(default=lambda: None)  # Called with no arguments when the button is pressed
+    label: Text = field(default_factory=ButtonText)
+    action: Callable[[], Any] = field(default=lambda: None)  # Called with no arguments when the button is pressed.
 
     size: Measure = _CONTROL_SIZE
     padding: Measure = _CONTROL_PADDING
@@ -681,10 +680,10 @@ class PrimaryButton(Button):
 
     label: Text = field(default_factory=PrimaryButtonText)
 
-    padding: Measure = (3.0, 3.0)  # Gap around the bar, the same on every side
+    padding: Measure = (3.0, 3.0)  # Gap around the bar, the same on every side.
     fill_color: Color = ThemeColorType.FILL
     selected_fill_color: Color = ThemeColorType.PRIMARY
-    selected_text_color: Color = ThemeColorType.SURFACE_INPUT  # Still cut out when the bar is lit
+    selected_text_color: Color = ThemeColorType.SURFACE_INPUT  # Still cut out when the bar is lit.
 
 
 @dataclass(kw_only=True, repr=False)
@@ -702,7 +701,7 @@ class Toggle(InteractiveElement):
 
         text_color: Color = ThemeColorType.TEXT_MUTED
 
-    value: bool = False  # Current boolean state
+    value: bool = False
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
     label: Toggle.ToggleText = field(default_factory=ToggleText)
@@ -722,7 +721,7 @@ class Toggle(InteractiveElement):
     edited_fill_color: Color = ThemeColorType.WARNING
     filled_text_color: Color = ThemeColorType.SURFACE_INPUT
     selected_border_color: Color = ThemeColorType.PRIMARY
-    selected_text_color: Color = ThemeColorType.PRIMARY  # The option it would switch to, while focused
+    selected_text_color: Color = ThemeColorType.PRIMARY  # The option it would switch to, while focused.
 
     def __call__(self) -> bool:
         """Flip the value and call ``action`` with it."""
@@ -745,19 +744,19 @@ class Slider(InteractiveElement, ProgressBar):
     box shows focus; the number box keeps its border.
     """
 
-    value: float = 0.0  # Current value within the range
-    range: tuple[float, float] = (0, 1)  # Minimum and maximum allowed values
-    step: float = 0.1  # Increment/decrement amount per adjustment
+    value: float = 0.0
+    range: tuple[float, float] = (0, 1)
+    step: float = 0.1
 
     left_arrow: Text = field(default_factory=lambda: Selector.LeftShiftArrow())
     right_arrow: Text = field(default_factory=lambda: Selector.RightShiftArrow())
-    gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the segments
+    gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the segments.
 
     action: Callable[[Any], bool] = field(default=lambda v: True)
 
     empty_color: Color = ThemeColorType.SURFACE_DISPLAY
 
-    # InteractiveElement restores Element's defaults over ProgressBar's, so the box is declared again
+    # InteractiveElement restores Element's defaults over ProgressBar's, so the box is declared again.
     size: Measure = _CONTROL_SIZE
     padding: Measure = _PART_PADDING
     alignment: AlignmentType = AlignmentType.CENTER
@@ -770,7 +769,7 @@ class Slider(InteractiveElement, ProgressBar):
     selected_border_color: Color = ThemeColorType.PRIMARY
     selected_arrow_color: Color = ThemeColorType.PRIMARY
     disabled_arrow_color: Color = ThemeColorType.TEXT_DISABLED
-    altered_color: Color = ThemeColorType.WARNING  # Segments and number once the value has been changed
+    altered_color: Color = ThemeColorType.WARNING  # Segments and number once the value has been changed.
 
     is_selectable: bool = True
     is_edited: bool = field(default=False, init=False, repr=False)
@@ -838,14 +837,14 @@ class Selector(InteractiveElement):
     selection_text: SelectionText = field(default_factory=SelectionText)
     left_arrow: LeftShiftArrow = field(default_factory=LeftShiftArrow)
     right_arrow: RightShiftArrow = field(default_factory=RightShiftArrow)
-    gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the option's slot
+    gap: Measure = (2.0, 0.0)  # Between each arrow's pressable area and the option's slot.
 
     number_text: Text = field(default_factory=NumberText)
     count_text: Text = field(default_factory=CountText)
-    number_format: str = "{position}"  # str.format pattern given the 1-based ``position``
-    count_format: str = "/{count}"  # str.format pattern given the ``count`` of options
-    number_pw: int = 40  # The same width as a slider's number box
-    box_gap_pw: int = 6  # Between the selector box and the number box
+    number_format: str = "{position}"  # str.format pattern given the 1-based ``position``.
+    count_format: str = "/{count}"  # str.format pattern given the ``count`` of options.
+    number_pw: int = 40  # The same width as a slider's number box.
+    box_gap_pw: int = 6  # Between the selector box and the number box.
     use_number: bool = True
 
     action: Callable[[Any], bool] = field(default=lambda v: True)
@@ -921,10 +920,10 @@ class InputField(InteractiveElement):
 
     prompt: Text = field(default_factory=InputPromptText)
     hint: Text = field(default_factory=InputHintText)
-    value: Text = field(default_factory=InputValueText)  # Current committed text value
-    action: Callable[[Any], bool] = field(default=lambda v: True)  # Function called with new value when committed
+    value: Text = field(default_factory=InputValueText)  # Current committed text value.
+    action: Callable[[Any], bool] = field(default=lambda v: True)  # Function called with new value when committed.
     validator: Callable[[str], bool] = field(default=lambda s: bool(re.fullmatch(ALPHANUMERIC_REGEX, s)))
-    gap: Measure = (6.0, 0.0)  # Between the prompt and the value
+    gap: Measure = (6.0, 0.0)  # Between the prompt and the value.
 
     size: Measure = _CONTROL_SIZE
     padding: Measure = _CONTROL_PADDING
@@ -941,11 +940,11 @@ class InputField(InteractiveElement):
 
     is_edited: bool = field(default=False, init=False, repr=False)
     is_open: bool = field(default=False, init=False, repr=False)
-    _open_buffer: str = field(default="", init=False, repr=False)  # Internal buffer for text being edited
+    _open_buffer: str = field(default="", init=False, repr=False)  # Internal buffer for text being edited.
 
-    _cursor_glyphs: ClassVar[tuple[str, ...]] = ("_", "")  # Cursor glyphs cycled while editing
-    _cursor_period: ClassVar[float] = 0.5  # Seconds each cursor glyph is shown
-    _cursor_epoch: float = field(default=0.0, init=False, repr=False)  # Time the blink cycle last restarted
+    _cursor_glyphs: ClassVar[tuple[str, ...]] = ("_", "")  # Cursor glyphs cycled while editing.
+    _cursor_period: ClassVar[float] = 0.5  # Seconds each cursor glyph is shown.
+    _cursor_epoch: float = field(default=0.0, init=False, repr=False)  # Time the blink cycle last restarted.
 
     def authenticate(self) -> bool:
         """"""
@@ -1007,7 +1006,7 @@ class InputField(InteractiveElement):
             self.is_edited = True
             self.value.text = self._open_buffer
             self.is_called = True
-            self.action(self.value.text)  # Call action once, with the new text
+            self.action(self.value.text)  # Call action once, with the new text.
         self.is_open = False
         return True
 

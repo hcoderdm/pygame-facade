@@ -36,7 +36,7 @@ class Menu(ABC):
     _dscroll: float = 0.0
     _d2scroll: float = 0.0
 
-    # Root division config — controls how elements are laid out inside the menu
+    # Root division config — controls how elements are laid out inside the menu.
     root_elements: list[Element] = field(default_factory=list)
     root_justify: JustifyType = JustifyType.CENTER
     root_alignment: AlignmentType = AlignmentType.TOPLEFT
@@ -64,12 +64,12 @@ class Menu(ABC):
     _selected_index: int = field(init=False, repr=False, compare=False, default=0)
 
     # The keys keep their place in ``_selected_index`` and the pointer has its own hover. Whichever was
-    # used last is lit, so moving the mouse never loses the keyboard's place
+    # used last is lit, so moving the mouse never loses the keyboard's place.
     _is_pointer_leading: bool = field(init=False, repr=False, compare=False, default=False)
     _hovered_id: str | None = field(init=False, repr=False, compare=False, default=None)
     _pointer_part: str | None = field(init=False, repr=False, compare=False, default=None)
-    _pressed: tuple[str, str] | None = field(init=False, repr=False, compare=False, default=None)  # Element id and part held down
-    _key_anchor_pos: tuple[int, int] | None = field(init=False, repr=False, compare=False, default=None)  # Pointer position at the last key press
+    _pressed: tuple[str, str] | None = field(init=False, repr=False, compare=False, default=None)  # Element id and part held down.
+    _key_anchor_pos: tuple[int, int] | None = field(init=False, repr=False, compare=False, default=None)  # Pointer position at the last key press.
 
     def __post_init__(self):
         self._div = VerticalDivision(
@@ -219,5 +219,5 @@ class Menu(ABC):
 
     def set_pressed_part(self, element: Element | None, part: str = "") -> None:
         """Hold ``part`` of ``element`` down, or release whatever is held when ``element`` is ``None``."""
-        # Holding looks the same as pointing, so nothing is redrawn
+        # Holding looks the same as pointing, so nothing is redrawn.
         self._pressed = (element.id, part) if element is not None else None

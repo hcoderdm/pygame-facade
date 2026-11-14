@@ -19,24 +19,24 @@ class ThemeColorType(Enum):
     so a menu can change theme without rebuilding its elements.
     """
 
-    BACKGROUND = auto()  # Behind everything in a menu
-    SURFACE_INPUT = auto()  # Inside an input
-    SURFACE_DISPLAY = auto()  # Inside a display-only box
-    BORDER_INPUT = auto()  # Around an input
-    BORDER_DISPLAY = auto()  # Around a display-only box
-    TEXT_NORMAL = auto()  # Normal text
-    TEXT_MUTED = auto()  # Prompts, hints, the unchosen option
-    FILL = auto()  # Filled toggle half, bar segments and key chips
-    HEADING = auto()  # Headings and titles
-    SHADOW = auto()  # The shadow under inputs
-    PRIMARY = auto()  # The focused or hovered element
-    WARNING = auto()  # A value changed from its original
-    DANGER = auto()  # An invalid entry or a conflict
-    SUCCESS = auto()  # Something saved or confirmed
-    INFO = auto()  # Neutral notices and tips
+    BACKGROUND = auto()  # Behind everything in a menu.
+    SURFACE_INPUT = auto()  # Inside an input.
+    SURFACE_DISPLAY = auto()  # Inside a display-only box.
+    BORDER_INPUT = auto()  # Around an input.
+    BORDER_DISPLAY = auto()  # Around a display-only box.
+    TEXT_NORMAL = auto()  # Normal text.
+    TEXT_MUTED = auto()  # Prompts, hints, the unchosen option.
+    FILL = auto()  # Filled toggle half, bar segments and key chips.
+    HEADING = auto()  # Headings and titles.
+    SHADOW = auto()  # The shadow under inputs.
+    PRIMARY = auto()  # The focused or hovered element.
+    WARNING = auto()  # A value changed from its original.
+    DANGER = auto()  # An invalid entry or a conflict.
+    SUCCESS = auto()  # Something saved or confirmed.
+    INFO = auto()  # Neutral notices and tips.
 
-    HEADING_SHADOW = auto()  # Generated: the shadow under headings
-    TEXT_DISABLED = auto()  # Generated: anything that can't be used right now
+    HEADING_SHADOW = auto()  # Generated: the shadow under headings.
+    TEXT_DISABLED = auto()  # Generated: anything that can't be used right now.
 
 
 def mix_rgba(start: RGBA, end: RGBA, amount: float) -> RGBA:
@@ -83,8 +83,8 @@ class Theme:
 
     extras: dict[str, RGBA] = field(default_factory=dict)
 
-    heading_shadow_amount: float = 0.6  # How far the heading shadow moves from the heading toward the background
-    text_disabled_amount: float = 0.62  # How far disabled text moves from normal text toward the input surface
+    heading_shadow_amount: float = 0.6  # How far the heading shadow moves from the heading toward the background.
+    text_disabled_amount: float = 0.62  # How far disabled text moves from normal text toward the input surface.
 
     def get_rgba(self, color: RGBA | ThemeColorType) -> RGBA:
         """The RGBA value of ``color``: a role is looked up in this theme, and an RGBA string is returned as it is."""
@@ -102,21 +102,21 @@ class Theme:
 
 
 # Open Color's grays, with colour kept for state alone: indigo for focus, yellow for a changed
-# value and red for an invalid one. Inputs sit darker than the background and display boxes lighter
+# value and red for an invalid one. Inputs sit darker than the background and display boxes lighter.
 DEFAULT_THEME = Theme(
-    background="#343A40FF",  # gray 8
-    surface_input="#212529FF",  # gray 9
-    surface_display="#495057FF",  # gray 7
-    border_input="#CED4DAFF",  # gray 4
-    border_display="#868E96FF",  # gray 6
-    text_normal="#F8F9FAFF",  # gray 0
-    text_muted="#ADB5BDFF",  # gray 5
-    fill="#F1F3F5FF",  # gray 1
-    heading="#F8F9FAFF",  # gray 0
-    shadow="#1A1D20FF",  # gray 8 halfway to black
-    primary="#91A7FFFF",  # indigo 3
-    warning="#FFD43BFF",  # yellow 4
-    danger="#FF6B6BFF",  # red 5
-    success="#69DB7CFF",  # green 4
-    info="#3BC9DBFF",  # cyan 4
+    background="#343A40FF",  # gray 8.
+    surface_input="#212529FF",  # gray 9.
+    surface_display="#495057FF",  # gray 7.
+    border_input="#CED4DAFF",  # gray 4.
+    border_display="#868E96FF",  # gray 6.
+    text_normal="#F8F9FAFF",  # gray 0.
+    text_muted="#ADB5BDFF",  # gray 5.
+    fill="#F1F3F5FF",  # gray 1.
+    heading="#F8F9FAFF",  # gray 0.
+    shadow="#1A1D20FF",  # gray 8 halfway to black.
+    primary="#91A7FFFF",  # indigo 3.
+    warning="#FFD43BFF",  # yellow 4.
+    danger="#FF6B6BFF",  # red 5.
+    success="#69DB7CFF",  # green 4.
+    info="#3BC9DBFF",  # cyan 4.
 )

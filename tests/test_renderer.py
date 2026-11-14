@@ -1,5 +1,5 @@
 """
-Renderer output format and caching.
+test_renderer.py
 """
 
 from dataclasses import dataclass
@@ -15,117 +15,16 @@ SIZE = (800, 600)
 FONTS = Path(__file__).resolve().parents[1] / "examples" / "assets" / "fonts"
 
 
-def pixels(surface):
-    return pygame.image.tobytes(surface, "RGBA")
+def pixels(surf):
+    return pygame.image.tobytes(surf, "RGBA")
 
 
-def counting_recomposes(ui):
+def counting_recomposes(interface):
     """Wrap the renderer's compose step and return a list counting its calls."""
     calls = []
-    compose = ui.renderer._compose_tree
-    ui.renderer._compose_tree = lambda menu, size: calls.append(1) or compose(menu, size)
+    compose = interface.renderer._compose_tree
+    interface.renderer._compose_tree = lambda menu, size: calls.append(1) or compose(menu, size)
     return calls
-
-
-def test_composing_a_menu_is_not_an_edit():
-    ui = Interface(size=SIZE)
-    ui.push(Form())
-    version = Element._render_version
-
-    ui.render()
-
-    assert Element._render_version == version
-
-
-def test_creating_elements_elsewhere_keeps_the_cache():
-    ui = Interface(size=SIZE)
-    ui.push(Overlay())
-    first = ui.render()
-
-    NormalText(text="score: 10")  # e.g. a game building its own elements each frame
-
-    assert ui.render() is first
-
-
-def test_two_interfaces_keep_their_own_caches():
-    a, b = Interface(size=SIZE), Interface(size=SIZE)
-    a.push(Overlay())
-    b.push(Title())
-    calls_a, calls_b = counting_recomposes(a), counting_recomposes(b)
-
-    for _ in range(5):
-        a.render()
-        b.render()
-
-    assert (len(calls_a), len(calls_b)) == (1, 1)
-
-
-def test_open_input_field_cursor_blinks_on_screen(monkeypatch):
-    now = [100.0]
-    monkeypatch.setattr(time, "monotonic", lambda: now[0])
-    menu = Form()
-    field = next(e for e in menu._selectable_elements if isinstance(e, InputField))
-    ui = Interface(size=SIZE)
-    ui.push(menu)
-    menu.select_element_by_id(field.id)
-    field.open()
-
-    shown = pixels(ui.render())
-    assert ui.render() is ui.render()  # Steady while the glyph is unchanged
-    now[0] += InputField._cursor_period
-    hidden = pixels(ui.render())
-
-    assert shown != hidden
-
-
-def test_text_cache_is_bounded_while_resizing():
-    ui = Interface(size=SIZE)
-    ui.push(Form())
-    cache = ui.renderer._text_cache
-    cache.max_bytes = 4 * 1024 * 1024
-
-    for width in range(600, 700):
-        ui.resize((width, 600))
-        ui.render()
-
-    assert cache.nbytes <= cache.max_bytes
-
-
-def test_recomposing_gives_identical_pixels():
-    ui = Interface(size=SIZE)
-    ui.push(Title())
-    first = pixels(ui.render())
-
-    Element._render_version += 1  # Force a full recompose with warm caches
-
-    assert pixels(ui.render()) == first
-
-
-def test_opaque_menu_is_returned_without_per_pixel_alpha():
-    ui = Interface(size=SIZE)
-    ui.push(Title())
-
-    surface = ui.render()
-    assert surface is not None
-
-    assert surface.get_size() == SIZE
-    assert not surface.get_flags() & pygame.SRCALPHA
-    assert surface.get_at((0, 0)) == drawn(DEFAULT_THEME.background)  # Menu's default background
-
-
-def test_menu_smaller_than_window_keeps_alpha():
-    @dataclass(kw_only=True)
-    class Panel(Menu):
-        root_size: tuple[float, float] = (0.5, 0.5)
-
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[NormalText(text="hi")]))
-
-    surface = ui.render()
-    assert surface is not None
-
-    assert surface.get_flags() & pygame.SRCALPHA
-    assert surface.get_at((SIZE[0] - 1, SIZE[1] - 1)).a == 0
 
 
 @dataclass(kw_only=True)
@@ -145,51 +44,15 @@ def tree_of(renderer: MenuRenderer | DebugRenderer):
     return tree
 
 
-def hit_rect_of(ui, element):
-    return next(rect for hit, rect in tree_of(ui.renderer).hit_rects if hit is element)
+def hit_rect_of(interface, element):
+    return next(rect for hit, rect in tree_of(interface.renderer).hit_rects if hit is element)
 
 
-def test_scrolling_reuses_the_tree():
-    ui = Interface(size=(800, 120))
-    menu = Panel(root_elements=[NormalText(text=f"line {i}") for i in range(20)])
-    ui.push(menu)
-    calls = counting_recomposes(ui)
-    first = ui.render()
-
-    menu._scroll = 50.0
-    scrolled = ui.render()
-
-    assert scrolled is not first
-    assert len(calls) == 1
-
-
-def test_fixed_element_is_hit_where_it_is_aligned():
-    marker = NormalText(text="x", is_fixed=True, is_selectable=True, alignment=AlignmentType.BOTTOMRIGHT)
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[marker]))
-    ui.render()
-
-    assert hit_rect_of(ui, marker).bottomright == SIZE
-
-
-def test_offset_moves_the_box():
-    def placed(offset):
-        button = Button(label=Button.ButtonText(text="GO"), offset=offset)
-        ui = Interface(size=SIZE)
-        ui.push(Panel(root_elements=[button]))
-        ui.render()
-        return hit_rect_of(ui, button)
-
-    plain, moved = placed((0.0, 0.0)), placed((10.0, 5.0))
-
-    assert (moved.x, moved.y, moved.size) == (plain.x + 10, plain.y + 5, plain.size)
-
-
-def runs_of(surface, py, px_range, colors):
+def runs_of(surf, py, px_range, colors):
     """Lengths of consecutive runs of each colour along row ``py``, as (colour, length) pairs."""
     runs = []
     for px in px_range:
-        color = surface.get_at((px, py))
+        color = surf.get_at((px, py))
         key = next((name for name, value in colors.items() if color == pygame.Color(value)), None)
         if runs and runs[-1][0] == key:
             runs[-1][1] += 1
@@ -198,173 +61,240 @@ def runs_of(surface, py, px_range, colors):
     return [(key, length) for key, length in runs if key is not None]
 
 
-def test_progress_bar_fills_its_fraction_of_the_segments():
-    bar = ProgressBar(value=0.5, use_number=False, fill_color="#FF0000FF", empty_color="#0000FFFF", is_selectable=True)
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[bar]))
-    surface = ui.render()
-    track = hit_rect_of(ui, bar)
-
-    runs = runs_of(surface, track.centery, range(track.left, track.right), {"fill": "#FF0000FF", "empty": "#0000FFFF"})
-
-    assert [key for key, _ in runs] == ["fill"] * 5 + ["empty"] * 5
-    assert len({length for _, length in runs}) == 1  # Every segment the same width
+def debugging(interface, **modes):
+    """Wrap the interface's renderer in a ``DebugRenderer`` and return it."""
+    debug = DebugRenderer(interface.renderer, **modes)
+    interface.renderer = debug
+    return debug
 
 
-def test_text_is_centred_on_its_ink():
-    # The pixel font has blank rows above its capitals and spacing after each glyph, which layout must ignore
-    button = Button(label=Button.ButtonText(text="START", text_color="#FF0000FF"))
-    ui = Interface(size=SIZE)
-    ui.fonts.add_dir(str(FONTS))
-    ui.push(Panel(root_elements=[Gap(is_selectable=True), button]))  # The gap holds the selection, so the label keeps its colour
-    surface = ui.render()
-    assert surface is not None
-    box = hit_rect_of(ui, button).inflate(-2, -2)  # Inside the border
-
-    ink = [(px, py) for px in range(box.left, box.right) for py in range(box.top, box.bottom) if surface.get_at((px, py)) == pygame.Color("#FF0000FF")]
-    ink_xs, ink_ys = [px for px, _ in ink], [py for _, py in ink]
-
-    assert min(ink_ys) - box.top == box.bottom - 1 - max(ink_ys)
-    assert min(ink_xs) - box.left == box.right - 1 - max(ink_xs)
+def count_pixels(surf, rect, color):
+    target = drawn(color)
+    return sum(surf.get_at((px, py)) == target for px in range(rect.left, rect.right) for py in range(rect.top, rect.bottom))
 
 
-def test_selected_slider_outlines_only_its_bar():
-    slider = Slider()
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[slider]))
-    surface = ui.render()
-    assert surface is not None
-    rect = hit_rect_of(ui, slider)
-
-    assert surface.get_at((rect.left, rect.centery)) == drawn(slider.selected_border_color)
-    assert surface.get_at((rect.right - 1, rect.centery)) == drawn(slider.border_color)
+def bar_margins(surf, box, color):
+    """Gaps between the inside of a border and the block of ``color`` within it, as left, right, top, bottom."""
+    xs = [px for px in range(box.left, box.right) if surf.get_at((px, box.centery)) == color]
+    ys = [py for py in range(box.top, box.bottom) if surf.get_at((box.centerx - 40, py)) == color]
+    return min(xs) - box.left, box.right - 1 - max(xs), min(ys) - box.top, box.bottom - 1 - max(ys)
 
 
-def test_clicks_on_a_bar_reach_the_slider():
-    slider = Slider()
-    ui = Interface(size=SIZE)
-    menu = Panel(root_elements=[slider])
-    ui.push(menu)
-    ui.render()
-    rect = hit_rect_of(ui, slider)
-
-    assert ui.renderer.find_elements_at(menu, rect.center)[0] is slider
-
-
-def test_toggle_fills_the_half_for_its_value():
-    toggle = Toggle(value=True)
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[Gap(is_selectable=True), toggle]))  # The gap holds the selection
-    surface = ui.render()
-    assert surface is not None
-    rect = hit_rect_of(ui, toggle)
-    inset = 1 + int(toggle.padding[0])
-
-    assert surface.get_at((rect.right - 1 - inset, rect.centery)) == drawn(toggle.fill_color)
-    assert surface.get_at((rect.left + inset, rect.centery)) == drawn(toggle.background_color)
-
-
-def test_changing_progress_bar_value_redraws():
-    bar = ProgressBar(value=0.25)
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[bar]))
-    first = ui.render()
-
-    bar.value = 0.75
-
-    assert ui.render() is not first
-
-
-def test_rendering_a_slider_is_not_an_edit():
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[Slider()]))
+def test_261112003834_6667b906():
+    # Composing a menu is not an edit.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Form())
     version = Element._render_version
 
-    ui.render()
+    interface.render()
 
     assert Element._render_version == version
 
 
-def test_stepping_a_slider_redraws():
-    slider = Slider()
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[slider]))
-    first = ui.render()
+def test_261112003834_cd7c113e():
+    # Creating elements elsewhere keeps the cache.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Overlay())
+    first = interface.render()
 
-    slider.increment()
+    NormalText(text="score: 10")  # e.g. a game building its own elements each frame.
 
-    assert ui.render() is not first
-
-
-def debugging(ui, **modes):
-    """Wrap the interface's renderer in a ``DebugRenderer`` and return it."""
-    debug = DebugRenderer(ui.renderer, **modes)
-    ui.renderer = debug
-    return debug
+    assert interface.render() is first
 
 
-def test_debug_renderer_with_no_mode_returns_the_wrapped_output():
-    ui = Interface(size=SIZE)
-    ui.push(Title())
-    debug = debugging(ui)
+def test_261112003834_3972aaf3():
+    # Two interfaces keep their own caches.
+    a, b = Interface(size=SIZE), Interface(size=SIZE)
+    a.push_stack(Overlay())
+    b.push_stack(Title())
+    calls_a, calls_b = counting_recomposes(a), counting_recomposes(b)
 
-    assert ui.render() is tree_of(debug.renderer).output_surf
+    for _ in range(5):
+        a.render()
+        b.render()
+
+    assert (len(calls_a), len(calls_b)) == (1, 1)
 
 
-def test_debug_modes_leave_the_wrapped_output_and_cache_alone():
-    ui = Interface(size=SIZE)
+def test_261112003852_a9f9daf2(monkeypatch):
+    # Open input field cursor blinks on screen.
+    now = [100.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    menu = Form()
+    field = next(e for e in menu._selectable_elements if isinstance(e, InputField))
+    interface = Interface(size=SIZE)
+    interface.push_stack(menu)
+    menu.select_element_by_id(field.id)
+    field.open()
+
+    shown = pixels(interface.render())
+    assert interface.render() is interface.render()  # Steady while the glyph is unchanged.
+    now[0] += InputField._cursor_period
+    hidden = pixels(interface.render())
+
+    assert shown != hidden
+
+
+def test_261112003907_08d86fbc():
+    # Text cache is bounded while resizing.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Form())
+    cache = interface.renderer._text_cache
+    cache.max_bytes = 4 * 1024 * 1024
+
+    for width in range(600, 700):
+        interface.resize((width, 600))
+        interface.render()
+
+    assert cache.nbytes <= cache.max_bytes
+
+
+def test_261112003947_48b42455():
+    # Recomposing gives identical pixels.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Title())
+    first = pixels(interface.render())
+
+    Element._render_version += 1  # Force a full recompose with warm caches.
+
+    assert pixels(interface.render()) == first
+
+
+def test_261112004005_f3debe1d():
+    # Opaque menu is returned without per pixel alpha.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Title())
+
+    surf = interface.render()
+    assert surf is not None
+
+    assert surf.get_size() == SIZE
+    assert not surf.get_flags() & pygame.SRCALPHA
+    assert surf.get_at((0, 0)) == drawn(DEFAULT_THEME.background)  # Menu's default background.
+
+
+def test_261112004005_7aabfa73():
+    @dataclass(kw_only=True)
+    # Menu smaller than window keeps alpha.
+    class Panel(Menu):
+        root_size: tuple[float, float] = (0.5, 0.5)
+
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[NormalText(text="hi")]))
+
+    surf = interface.render()
+    assert surf is not None
+
+    assert surf.get_flags() & pygame.SRCALPHA
+    assert surf.get_at((SIZE[0] - 1, SIZE[1] - 1)).a == 0
+
+
+def test_261113000952_f5cfefd6():
+    # Scrolling reuses the tree.
+    interface = Interface(size=(800, 120))
+    menu = Panel(root_elements=[NormalText(text=f"line {i}") for i in range(20)])
+    interface.push_stack(menu)
+    calls = counting_recomposes(interface)
+    first = interface.render()
+
+    menu._scroll = 50.0
+    scrolled = interface.render()
+
+    assert scrolled is not first
+    assert len(calls) == 1
+
+
+def test_261113000952_7c5ab7f9():
+    # Fixed element is hit where it is aligned.
+    marker = NormalText(text="x", is_fixed=True, is_selectable=True, alignment=AlignmentType.BOTTOMRIGHT)
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[marker]))
+    interface.render()
+
+    assert hit_rect_of(interface, marker).bottomright == SIZE
+
+
+def test_261113000952_42a63b53():
+    # Offset moves the box.
+    def placed(offset):
+        button = Button(label=Button.ButtonText(text="GO"), offset=offset)
+        interface = Interface(size=SIZE)
+        interface.push_stack(Panel(root_elements=[button]))
+        interface.render()
+        return hit_rect_of(interface, button)
+
+    plain, moved = placed((0.0, 0.0)), placed((10.0, 5.0))
+
+    assert (moved.x, moved.y, moved.size) == (plain.x + 10, plain.y + 5, plain.size)
+
+
+def test_261113150544_46856ca9():
+    # Debug renderer with no mode returns the wrapped output.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Title())
+    debug = debugging(interface)
+
+    assert interface.render() is tree_of(debug.renderer).output_surf
+
+
+def test_261113150544_2770d620():
+    # Debug modes leave the wrapped output and cache alone.
+    interface = Interface(size=SIZE)
     menu = Title()
-    ui.push(menu)
-    debug = debugging(ui, use_stats_overlay=True, use_hover_border=True, use_hit_rects=True)
+    interface.push_stack(menu)
+    debug = debugging(interface, use_stats_overlay=True, use_hover_border=True, use_hit_rects=True)
     clean = pixels(debug.renderer.render(menu, SIZE))
     calls = []
     compose = debug.renderer._compose_tree
     debug.renderer._compose_tree = lambda menu, size: calls.append(1) or compose(menu, size)
 
-    shown = ui.render()
-    ui.render()
+    shown = interface.render()
+    interface.render()
 
     assert pixels(tree_of(debug.renderer).output_surf) == clean
     assert pixels(shown) != clean
     assert len(calls) == 0
 
 
-def test_debug_counts_recomposes_not_frames():
-    ui = Interface(size=SIZE)
+def test_261113150544_fd34f2cb():
+    # Debug counts recomposes not frames.
+    interface = Interface(size=SIZE)
     menu = Title()
-    ui.push(menu)
-    debug = debugging(ui)
+    interface.push_stack(menu)
+    debug = debugging(interface)
 
     for _ in range(3):
-        ui.render()
+        interface.render()
     start = menu.root_elements[1]
     assert isinstance(start, Button)
     start.label.text = "BEGIN"
-    ui.render()
+    interface.render()
 
     assert (debug._counts["fps"], debug._counts["composes"]) == (4, 2)
 
 
-def test_tree_records_rects_of_unselectable_elements():
+def test_261113150544_68228258():
+    # Tree records rects of unselectable elements.
     label = NormalText(text="score")
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[label]))
-    ui.render()
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[label]))
+    interface.render()
 
-    assert any(element is label for element, _ in tree_of(ui.renderer).element_rects)
+    assert any(element is label for element, _ in tree_of(interface.renderer).element_rects)
 
 
-def test_hover_border_inverts_only_the_pixels_on_its_edge():
+def test_261113150544_ea1b5856():
+    # Hover border inverts only the pixels on its edge.
     button = Button(label=Button.ButtonText(text="GO"), background_color="#204060FF")
-    ui = Interface(size=SIZE)
+    interface = Interface(size=SIZE)
     menu = Panel(root_elements=[button])
-    ui.push(menu)
-    debug = debugging(ui, use_hover_border=True)
+    interface.push_stack(menu)
+    debug = debugging(interface, use_hover_border=True)
     plain = debug.renderer.render(menu, SIZE)
     rect = next(rect for hit, rect in tree_of(debug.renderer).hit_rects if hit is button)
     debug.get_hovered_element = lambda menu: (button, rect)
 
-    outlined = ui.render()
+    outlined = interface.render()
     assert outlined is not None
 
     before, after = plain.get_at(rect.topleft), outlined.get_at(rect.topleft)
@@ -372,198 +302,304 @@ def test_hover_border_inverts_only_the_pixels_on_its_edge():
     assert outlined.get_at(rect.center) == plain.get_at(rect.center)
 
 
-def test_hit_rects_outline_selectable_elements():
-    ui = Interface(size=SIZE)
-    ui.push(Title())
-    debug = debugging(ui, use_hit_rects=True)
+def test_261113150544_e496af44():
+    # Hit rects outline selectable elements.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Title())
+    debug = debugging(interface, use_hit_rects=True)
 
-    outlined = ui.render()
+    outlined = interface.render()
     assert outlined is not None
 
     rect = tree_of(debug.renderer).hit_rects[0][1]
     assert outlined.get_at(rect.topleft) == pygame.Color("#00FF80FF")
 
 
-def test_debug_renderer_hit_tests_like_the_wrapped_one():
-    ui = Interface(size=SIZE)
+def test_261113150544_4a86d38f():
+    # Debug renderer hit tests like the wrapped one.
+    interface = Interface(size=SIZE)
     menu = Title()
-    ui.push(menu)
-    ui.render()
+    interface.push_stack(menu)
+    interface.render()
     button = menu.root_elements[1]
-    pos = hit_rect_of(ui, button).center
-    debugging(ui)
+    pos = hit_rect_of(interface, button).center
+    debugging(interface)
 
-    assert ui.renderer.select_element_at(menu, pos) is button
+    assert interface.renderer.select_element_at(menu, pos) is button
 
 
-def test_border_without_background_leaves_the_inside_clear():
+def test_261113152542_8825a4b5():
+    # Progress bar fills its fraction of the segments.
+    bar = ProgressBar(value=0.5, use_number=False, fill_color="#FF0000FF", empty_color="#0000FFFF", is_selectable=True)
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[bar]))
+    surf = interface.render()
+    track = hit_rect_of(interface, bar)
+
+    runs = runs_of(surf, track.centery, range(track.left, track.right), {"fill": "#FF0000FF", "empty": "#0000FFFF"})
+
+    assert [key for key, _ in runs] == ["fill"] * 5 + ["empty"] * 5
+    assert len({length for _, length in runs}) == 1  # Every segment the same width.
+
+
+def test_261113152542_c9682c7c():
+    # The pixel font has blank rows above its capitals and spacing after each glyph, which layout must ignore.
+    # Text is centred on its ink.
+    button = Button(label=Button.ButtonText(text="START", text_color="#FF0000FF"))
+    interface = Interface(size=SIZE)
+    interface.fonts.add_dir(str(FONTS))
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), button]))  # The gap holds the selection, so the label keeps its colour.
+    surf = interface.render()
+    assert surf is not None
+    box = hit_rect_of(interface, button).inflate(-2, -2)  # Inside the border.
+
+    ink = [(px, py) for px in range(box.left, box.right) for py in range(box.top, box.bottom) if surf.get_at((px, py)) == pygame.Color("#FF0000FF")]
+    ink_xs, ink_ys = [px for px, _ in ink], [py for _, py in ink]
+
+    assert min(ink_ys) - box.top == box.bottom - 1 - max(ink_ys)
+    assert min(ink_xs) - box.left == box.right - 1 - max(ink_xs)
+
+
+def test_261113152542_8fc3583e():
+    # Selected slider outlines only its bar.
+    slider = Slider()
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[slider]))
+    surf = interface.render()
+    assert surf is not None
+    rect = hit_rect_of(interface, slider)
+
+    assert surf.get_at((rect.left, rect.centery)) == drawn(slider.selected_border_color)
+    assert surf.get_at((rect.right - 1, rect.centery)) == drawn(slider.border_color)
+
+
+def test_261113152542_275fd916():
+    # Clicks on a bar reach the slider.
+    slider = Slider()
+    interface = Interface(size=SIZE)
+    menu = Panel(root_elements=[slider])
+    interface.push_stack(menu)
+    interface.render()
+    rect = hit_rect_of(interface, slider)
+
+    assert interface.renderer.find_elements_at(menu, rect.center)[0] is slider
+
+
+def test_261113152542_b124fd8c():
+    # Toggle fills the half for its value.
+    toggle = Toggle(value=True)
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), toggle]))  # The gap holds the selection.
+    surf = interface.render()
+    assert surf is not None
+    rect = hit_rect_of(interface, toggle)
+    inset = 1 + int(toggle.padding[0])
+
+    assert surf.get_at((rect.right - 1 - inset, rect.centery)) == drawn(toggle.fill_color)
+    assert surf.get_at((rect.left + inset, rect.centery)) == drawn(toggle.background_color)
+
+
+def test_261113152542_24e059ae():
+    # Changing progress bar value redraws.
+    bar = ProgressBar(value=0.25)
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[bar]))
+    first = interface.render()
+
+    bar.value = 0.75
+
+    assert interface.render() is not first
+
+
+def test_261113152542_71c4a28f():
+    # Rendering a slider is not an edit.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[Slider()]))
+    version = Element._render_version
+
+    interface.render()
+
+    assert Element._render_version == version
+
+
+def test_261113202738_75850dfd():
+    # Border without background leaves the inside clear.
     outline = Gap(size=(40.0, 20.0), border_thickness=2, border_color="#FF0000FF", is_selectable=True)
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[outline]))
-    surface = ui.render()
-    assert surface is not None
-    rect = hit_rect_of(ui, outline)
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[outline]))
+    surf = interface.render()
+    assert surf is not None
+    rect = hit_rect_of(interface, outline)
 
-    assert surface.get_at(rect.topleft) == pygame.Color("#FF0000FF")
-    assert surface.get_at((rect.left + 1, rect.centery)) == pygame.Color("#FF0000FF")
-    assert surface.get_at(rect.center) == drawn(Panel().root_background_color)
-
-
-def count_pixels(surface, rect, color):
-    target = drawn(color)
-    return sum(surface.get_at((px, py)) == target for px in range(rect.left, rect.right) for py in range(rect.top, rect.bottom))
+    assert surf.get_at(rect.topleft) == pygame.Color("#FF0000FF")
+    assert surf.get_at((rect.left + 1, rect.centery)) == pygame.Color("#FF0000FF")
+    assert surf.get_at(rect.center) == drawn(Panel().root_background_color)
 
 
-def test_pointer_lights_only_the_arrow_on_its_side():
+def test_261113211043_d198a61e():
+    # Stepping a slider redraws.
+    slider = Slider()
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[slider]))
+    first = interface.render()
+
+    slider.increment()
+
+    assert interface.render() is not first
+
+
+def test_261113211043_c077af5d():
+    # Pointer lights only the arrow on its side.
     selector = Selector(selections=("A", "B", "C"), value=1)
-    ui = Interface(size=SIZE)
+    interface = Interface(size=SIZE)
     menu = Panel(root_elements=[selector])
-    ui.push(menu)
-    keys_surface = ui.render()
-    rect = hit_rect_of(ui, selector)
+    interface.push_stack(menu)
+    keys_surf = interface.render()
+    rect = hit_rect_of(interface, selector)
     left_zone = pygame.Rect(rect.left + 1, rect.top + 1, 20, rect.height - 2)
-    box_right = rect.right - selector.box_gap_pw - selector.number_pw  # The selector box ends where its number box begins
+    box_right = rect.right - selector.box_gap_pw - selector.number_pw  # The selector box ends where its number box begins.
     right_zone = pygame.Rect(box_right - 21, rect.top + 1, 20, rect.height - 2)
-    assert count_pixels(keys_surface, left_zone, selector.selected_arrow_color) > 0  # The keys light both arrows
+    assert count_pixels(keys_surf, left_zone, selector.selected_arrow_color) > 0  # The keys light both arrows.
 
     menu.set_pointer_leading(True)
     menu.set_hovered(selector, "right")
-    pointer_surface = ui.render()
+    pointer_surf = interface.render()
 
-    assert count_pixels(pointer_surface, left_zone, selector.selected_arrow_color) == 0
-    assert count_pixels(pointer_surface, right_zone, selector.selected_arrow_color) > 0
+    assert count_pixels(pointer_surf, left_zone, selector.selected_arrow_color) == 0
+    assert count_pixels(pointer_surf, right_zone, selector.selected_arrow_color) > 0
 
 
-def test_focused_toggle_shows_the_other_option_in_the_accent_colour():
+def test_261113211043_695a97e9():
+    # Focused toggle shows the other option in the accent colour.
     toggle = Toggle()
-    ui = Interface(size=SIZE)
+    interface = Interface(size=SIZE)
     menu = Panel(root_elements=[toggle])
-    ui.push(menu)
-    lit = ui.render()
-    rect = hit_rect_of(ui, toggle)
+    interface.push_stack(menu)
+    lit = interface.render()
+    rect = hit_rect_of(interface, toggle)
     true_half = pygame.Rect(rect.centerx, rect.top + 4, rect.width // 2 - 4, rect.height - 8)
     assert count_pixels(lit, true_half, toggle.selected_text_color) > 0
 
-    menu.set_pointer_leading(True)  # With the pointer over nothing
-    unlit = ui.render()
+    menu.set_pointer_leading(True)  # With the pointer over nothing.
+    unlit = interface.render()
 
     assert count_pixels(unlit, true_half, toggle.selected_text_color) == 0
 
 
-def test_holding_the_pointer_down_changes_nothing_on_screen():
+def test_261113211043_4fc73fd2():
+    # Holding the pointer down changes nothing on screen.
     button = Button(label=Button.ButtonText(text="GO"))
-    ui = Interface(size=SIZE)
+    interface = Interface(size=SIZE)
     menu = Panel(root_elements=[button])
-    ui.push(menu)
-    first = ui.render()
+    interface.push_stack(menu)
+    first = interface.render()
 
     menu.set_pressed_part(button, "body")
 
-    assert ui.render() is first
+    assert interface.render() is first
 
 
-def test_pointer_over_nothing_lights_nothing():
+def test_261113211043_37b36716():
+    # Pointer over nothing lights nothing.
     button = Button(label=Button.ButtonText(text="GO"))
-    ui = Interface(size=SIZE)
+    interface = Interface(size=SIZE)
     menu = Panel(root_elements=[button])
-    ui.push(menu)
+    interface.push_stack(menu)
     menu.set_pointer_leading(True)
-    surface = ui.render()
-    assert surface is not None
+    surf = interface.render()
+    assert surf is not None
 
-    assert surface.get_at(hit_rect_of(ui, button).topleft) == drawn(button.border_color)
+    assert surf.get_at(hit_rect_of(interface, button).topleft) == drawn(button.border_color)
 
 
-def test_hover_redraws_only_when_it_changes():
+def test_261113211043_a54dc13d():
+    # Hover redraws only when it changes.
     selector = Selector(selections=("A", "B"))
-    ui = Interface(size=SIZE)
+    interface = Interface(size=SIZE)
     menu = Panel(root_elements=[selector])
-    ui.push(menu)
+    interface.push_stack(menu)
     menu.set_pointer_leading(True)
     menu.set_hovered(selector, "left")
-    first = ui.render()
+    first = interface.render()
 
     menu.set_hovered(selector, "left")
-    assert ui.render() is first
+    assert interface.render() is first
     menu.set_hovered(selector, "right")
-    assert ui.render() is not first
+    assert interface.render() is not first
 
 
-def test_cursor_in_an_empty_field_sits_on_the_hint_without_moving_it(monkeypatch):
+def test_261113211043_05c8faca(monkeypatch):
+    # Cursor in an empty field sits on the hint without moving it.
     field = InputField(value=InputField.InputValueText(text=""), hint=InputField.InputHintText(text="[ESC]"))
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[field]))
-    ui.render()
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[field]))
+    interface.render()
 
     def text_rect(text):
-        return next(rect for drawn, rect in tree_of(ui.renderer).element_rects if isinstance(drawn, NormalText) and drawn.text == text)
+        return next(rect for drawn, rect in tree_of(interface.renderer).element_rects if isinstance(drawn, NormalText) and drawn.text == text)
 
     closed_hint = text_rect("[ESC]")
     monkeypatch.setattr(time, "monotonic", lambda: 0.0)
-    field.open()  # The cursor shows at once after opening
-    ui.render()
+    field.open()  # The cursor shows at once after opening.
+    interface.render()
 
     assert text_rect("[ESC]").topleft == closed_hint.topleft
     assert text_rect("_").topleft == closed_hint.topleft
 
 
-def test_selector_counts_its_position_beside_it_in_one_input_width():
+def test_261113212818_6ba23984():
+    # Primary button bar has an even gap.
+    button = PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="GO"))
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), button]))  # The gap holds the selection.
+    surf = interface.render()
+    assert surf is not None
+    box = hit_rect_of(interface, button).inflate(-2, -2)  # Inside the border.
+
+    assert bar_margins(surf, box, drawn(button.fill_color)) == (3, 3, 3, 3)
+    assert surf.get_at(box.topleft) == drawn(button.background_color)
+
+
+def test_261113212818_8a85fe77():
+    # Lit primary button lights its bar and border.
+    button = PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="GO"))
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[button]))
+    surf = interface.render()
+    assert surf is not None
+    rect = hit_rect_of(interface, button)
+
+    assert surf.get_at(rect.topleft) == drawn(button.selected_border_color)
+    assert bar_margins(surf, rect.inflate(-2, -2), drawn(button.selected_fill_color)) == (3, 3, 3, 3)
+
+
+def test_261113213323_fb2d87b3():
+    # Selector counts its position beside it in one input width.
     selector = Selector(selections=("A", "B", "C", "D"), value=1)
     plain = Selector(selections=("A", "B"), use_number=False)
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[Gap(is_selectable=True), selector, plain]))
-    ui.render()
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), selector, plain]))
+    interface.render()
 
     def texts():
-        return [drawn.text for drawn, _ in tree_of(ui.renderer).element_rects if isinstance(drawn, NormalText)]
+        return [drawn.text for drawn, _ in tree_of(interface.renderer).element_rects if isinstance(drawn, NormalText)]
 
     assert "2" in texts() and "/4" in texts() and "/2" not in texts()
-    assert hit_rect_of(ui, selector).width == hit_rect_of(ui, plain).width
+    assert hit_rect_of(interface, selector).width == hit_rect_of(interface, plain).width
 
     selector.next()
-    ui.render()
+    interface.render()
     assert "3" in texts()
 
 
-def test_selector_counter_mutes_the_total_and_marks_a_changed_position():
+def test_261113213323_2568542c():
+    # Selector counter mutes the total and marks a changed position.
     selector = Selector(selections=("A", "B", "C", "D"), value=1)
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[Gap(is_selectable=True), selector]))
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), selector]))
     selector.next()
-    ui.render()
+    interface.render()
 
-    colors = {drawn.text: drawn.text_color for drawn, _ in tree_of(ui.renderer).element_rects if isinstance(drawn, NormalText)}
+    colors = {drawn.text: drawn.text_color for drawn, _ in tree_of(interface.renderer).element_rects if isinstance(drawn, NormalText)}
     assert colors["3"] == selector.altered_selection_color
     assert colors["/4"] == selector.count_text.text_color
-
-
-def bar_margins(surface, box, color):
-    """Gaps between the inside of a border and the block of ``color`` within it, as left, right, top, bottom."""
-    xs = [px for px in range(box.left, box.right) if surface.get_at((px, box.centery)) == color]
-    ys = [py for py in range(box.top, box.bottom) if surface.get_at((box.centerx - 40, py)) == color]
-    return min(xs) - box.left, box.right - 1 - max(xs), min(ys) - box.top, box.bottom - 1 - max(ys)
-
-
-def test_primary_button_bar_has_an_even_gap():
-    button = PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="GO"))
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[Gap(is_selectable=True), button]))  # The gap holds the selection
-    surface = ui.render()
-    assert surface is not None
-    box = hit_rect_of(ui, button).inflate(-2, -2)  # Inside the border
-
-    assert bar_margins(surface, box, drawn(button.fill_color)) == (3, 3, 3, 3)
-    assert surface.get_at(box.topleft) == drawn(button.background_color)
-
-
-def test_lit_primary_button_lights_its_bar_and_border():
-    button = PrimaryButton(label=PrimaryButton.PrimaryButtonText(text="GO"))
-    ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[button]))
-    surface = ui.render()
-    assert surface is not None
-    rect = hit_rect_of(ui, button)
-
-    assert surface.get_at(rect.topleft) == drawn(button.selected_border_color)
-    assert bar_margins(surface, rect.inflate(-2, -2), drawn(button.selected_fill_color)) == (3, 3, 3, 3)
-

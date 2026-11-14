@@ -1,5 +1,5 @@
 """
-Small menus for the tests to open. The package ships no menus of its own.
+sample_menus.py
 """
 
 from dataclasses import dataclass, field

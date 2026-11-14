@@ -1,30 +1,14 @@
 """
 interface.py
-
-Interface - the one object a game uses. It owns a menu stack and a renderer,
-takes the game's pygame events, and returns a GUI surface to blit over the
-game's frame.
-
-    ui = Interface(size=screen.get_size())
-    ui.push(Start(on_start=start_game, on_quit=quit_game))  # A Menu subclass of the game's own
-
-    for event in pygame.event.get():
-        if ui.handle_event(event):
-            continue
-        ...  # the game's own input
-
-    draw_game(screen)
-    if (gui := ui.render()) is not None:
-        screen.blit(gui, (0, 0))
 """
 
 from __future__ import annotations
 
-import pygame
-
 from dataclasses import dataclass
 import time
 from typing import Callable
+
+import pygame
 
 from .assets import FontManager, ImageManager
 from .elements import InputField
@@ -43,15 +27,6 @@ from .theme import DEFAULT_THEME, Theme
 
 
 _REPEAT_KEYS = (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_BACKSPACE, pygame.K_DELETE)
-
-
-@dataclass
-class _HeldKey:
-    key: int
-    mod: int
-    text: str  # The character it types while a field is open, or "" for a key that is replayed as a key press
-    next_time: float  # When it next repeats, on the time.monotonic clock
-    is_text_seen: bool = False  # Whether the system's text event for the first press has arrived
 
 
 class Interface:
@@ -78,7 +53,7 @@ class Interface:
         self.use_hand_cursor: bool = use_hand_cursor
         self.repeat_delay: float = repeat_delay
         self.repeat_interval: float = repeat_interval
-        self._held_key: _HeldKey | None = None
+        self._held_key: HeldKey | None = None
         self.manager: MenuManager = MenuManager()
         self.renderer: MenuRenderer | DebugRenderer = MenuRenderer(theme)
 
@@ -118,7 +93,7 @@ class Interface:
         """Register ``menu`` so it can later be pushed by its type."""
         self.manager.add_menu(menu)
 
-    def push(self, menu: Menu | type[Menu]) -> None:
+    def push_stack(self, menu: Menu | type[Menu]) -> None:
         """
         Open a menu on top of the stack. Pass a menu instance (registered
         automatically) or the type of a menu registered with ``add_menu``.
@@ -127,23 +102,23 @@ class Interface:
             self.manager.add_menu(menu)
             menu = type(menu)
         if not self.manager.has_menu(menu):
-            raise KeyError(f"No {menu.__name__} menu has been added")
+            raise KeyError(f"Invalid {menu=}")
         self.manager.push_stack(menu)
 
-    def pop(self) -> Menu | None:
+    def pop_stack(self) -> Menu | None:
         """Close the top menu and return it, or ``None`` if none is open."""
         return self.manager.pop_stack(keep_root=False)
 
-    def clear(self) -> None:
+    def clear_stack(self) -> None:
         """Close every open menu."""
         self.manager.clear_stack()
 
-    def top(self) -> Menu | None:
+    def top_stack(self) -> Menu | None:
         """The menu currently shown, or ``None``."""
         return self.manager.top_stack()
 
     @property
-    def is_open(self) -> bool:
+    def is_showing(self) -> bool:
         """Whether any menu is shown."""
         return self.manager.top_stack() is not None
 
@@ -164,14 +139,14 @@ class Interface:
         held = self._held_key
         if event.type == pygame.KEYDOWN:
             if held is not None and held.key == event.key:
-                return True  # A repeat from pygame itself, when the game turned those on; the interface times its own
+                return True  # A repeat from pygame itself, when the game turned those on; the interface times its own.
             text = event.unicode if self._is_typing(menu) and event.unicode and event.unicode.isprintable() else ""
             is_used = handler(menu, event)
             is_repeating = is_used and (event.key in _REPEAT_KEYS or bool(text))
-            self._held_key = _HeldKey(event.key, event.mod, text, time.monotonic() + self.repeat_delay) if is_repeating else None
+            self._held_key = HeldKey(event.key, event.mod, text, time.monotonic() + self.repeat_delay) if is_repeating else None
             return is_used
         if event.type == pygame.TEXTINPUT and held is not None and held.text and event.text == held.text:
-            # The system repeats text on its own schedule too; only the first press's text is used
+            # The system repeats text on its own schedule too; only the first press's text is used.
             if held.is_text_seen:
                 return True
             held.is_text_seen = True
@@ -189,7 +164,7 @@ class Interface:
         now = time.monotonic()
         if held is None or now < held.next_time:
             return
-        # One repeat per frame at most, so a slow frame never fires a burst
+        # One repeat per frame at most, so a slow frame never fires a burst.
         held.next_time = max(held.next_time + self.repeat_interval, now)
         if held.text:
             if not self._is_typing(menu):
@@ -221,7 +196,19 @@ class Interface:
         if menu is None:
             return None
         self._repeat_held_key(menu)
-        menu = self.manager.top_stack()  # A repeated key can close the menu
+        menu = self.manager.top_stack()  # A repeated key can close the menu.
         if menu is None:
             return None
         return self.renderer.render(menu, self.size)
+
+
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class HeldKey:
+    key: int
+    mod: int
+    text: str  # The character it types while a field is open, or "" for a key that is replayed as a key press.
+    next_time: float  # When it next repeats, on the time.monotonic clock.
+    is_text_seen: bool = False  # Whether the system's text event for the first press has arrived.
