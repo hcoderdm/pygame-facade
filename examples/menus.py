@@ -18,26 +18,33 @@ from facade import (
     ALPHANUMERIC_REGEX,
     COLOR_PALETTE_BORDER,
     COLOR_PALETTE_NEUTRAL,
+    COLOR_PALETTE_SECONDARY,
     FLOAT_REGEX,
     INT_REGEX,
     RGBA_REGEX,
     AlignmentType,
+    BulletList,
     Button,
+    CreditList,
     Element,
     Gap,
     HeadingTwoText,
     HorizontalDivision,
     InputField,
     JustifyType,
+    Measure,
     MeasureType,
     Menu,
     NATIVE_FONT_SIZE,
     NormalText,
+    SectionHeader,
     Selector,
     Slider,
+    TextBlock,
     TextDecorationType,
     TitleText,
     Toggle,
+    VerticalDivision,
 )
 
 
@@ -242,31 +249,91 @@ class Settings(Menu):
         super().__post_init__()
 
 
-_LOREM = (
-    "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "
-    "incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud "
-    "exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure "
-    "dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. "
-    "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt "
-    "mollit anim id est laborum."
-)
+_COLUMN_PW = 290.0  # The width of a settings row: a label, a gap and an input
+_PANEL_PADDING = 16.0
+_SECTION_GAP_PH = 12.0  # Empty space between the heading, each box and the button, shadows included
+_PANEL_SHADOW_PH = 3.0
+
+
+def _panel(elements: list[Element]) -> VerticalDivision:
+    """A read-only box for one section: the input panel colour, the read-only border and the shared shadow."""
+    return VerticalDivision(
+        elements=elements,
+        size=(_COLUMN_PW + 2 * (_PANEL_PADDING + 1), 0.0),
+        padding=(_PANEL_PADDING, _PANEL_PADDING),
+        gap=(0.0, 8.0),
+        background_color=COLOR_PALETTE_SECONDARY,
+        border_thickness=1,
+        border_color=COLOR_PALETTE_BORDER,
+        shadow_color=COLOR_PALETTE_NEUTRAL,
+        shadow_alpha=0xB0,
+        shadow_offset=(_PANEL_SHADOW_PH, _PANEL_SHADOW_PH),
+    )
 
 
 @dataclass(kw_only=True)
 class About(Menu):
-    """About screen."""
+    """About screen: a centred heading, one box per section and a centred button, all evenly spaced."""
 
     on_return: Callable = field(default=lambda: None)
 
+    root_alignment: AlignmentType = AlignmentType.CENTER
+    root_gap: Measure = (0.0, 0.0)  # Every gap is a Gap below, so the heading's can differ
+
     def __post_init__(self):
-        self.root_elements = [
-            HeadingTwoText(text="About", justify=JustifyType.START, text_decorations=TextDecorationType.UNDERLINE),
-            NormalText(text=_LOREM, justify=JustifyType.START, is_wrappable=True),
-            NormalText(text=_LOREM, justify=JustifyType.START, is_wrappable=True),
-            Button(
-                label=Button.ButtonText(text="RETURN"),
-                action=self.on_return,
+        column = (_COLUMN_PW, 0.0)
+        intro = TextBlock(
+            size=column,
+            justify=JustifyType.START,
+            paragraphs=[
+                "This demo is a ball bouncing around the window, with every menu drawn over it by facade, a menu library for pygame.",
+                [
+                    "Open",
+                    TextBlock.EmphasisText(text="Settings"),
+                    "to change the game's values while it runs, or press",
+                    TextBlock.EmphasisText(text="Esc"),
+                    "during play to pause.",
+                    TextBlock.AsideText(text="The ball stops while a menu is open."),
+                ],
+            ],
+        )
+        controls = [
+            SectionHeader(label=SectionHeader.HeaderText(text="Controls"), size=column, justify=JustifyType.START),
+            BulletList(
+                size=column,
                 justify=JustifyType.START,
+                paragraphs=[
+                    ["Move with the", TextBlock.EmphasisText(text="arrow keys"), "or the mouse."],
+                    ["Press", TextBlock.EmphasisText(text="Return"), "to choose, or to edit a value and then keep it."],
+                    ["Press", TextBlock.EmphasisText(text="Left"), "and", TextBlock.EmphasisText(text="Right"), "to change a value."],
+                    ["Press", TextBlock.EmphasisText(text="Esc"), "to go back."],
+                    ["Press", TextBlock.EmphasisText(text="F3"), "to", TextBlock.EmphasisText(text="F5"), "for debug overlays."],
+                ],
             ),
+        ]
+        credits = [
+            SectionHeader(label=SectionHeader.HeaderText(text="Credits"), size=column, justify=JustifyType.START),
+            CreditList(
+                size=column,
+                justify=JustifyType.START,
+                credits=[("Font", "Brian Kent"), ("Menus", "facade"), ("Engine", "pygame-ce")],
+            ),
+        ]
+
+        heading = HeadingTwoText(text="About", text_decorations=TextDecorationType.UNDERLINE)
+        # Shadows hang below a part's layout box, so each spacer adds the shadow of the part above it.
+        # The heading's layout box already takes in its underline; its shadow drops below that
+        after_heading = Gap(size=(0.0, _SECTION_GAP_PH + heading.shadow_offset[1]))
+        after_panel = (0.0, _SECTION_GAP_PH + _PANEL_SHADOW_PH)
+        self.root_elements = [
+            heading,
+            after_heading,
+            _panel([intro]),
+            Gap(size=after_panel),
+            _panel(controls),
+            Gap(size=after_panel),
+            _panel(credits),
+            Gap(size=after_panel),
+            Button(label=Button.ButtonText(text="RETURN"), action=self.on_return),
         ]
         super().__post_init__()
