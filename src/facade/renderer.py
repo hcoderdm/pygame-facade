@@ -190,7 +190,8 @@ class _BoxCache(_SurfaceCache):
         border_rect = pygame.Rect(margin_pw, margin_ph, pw - 2 * margin_pw, ph - 2 * margin_ph)
         surf = _make_surf(pw, ph)
         if border_color is not None:
-            pygame.draw.rect(surf, border_color, border_rect)
+            # An outline, not a filled rect: with no background the inside must stay transparent
+            pygame.draw.rect(surf, border_color, border_rect, border_thickness)
         if background_color is not None:
             pygame.draw.rect(surf, background_color, border_rect.inflate(-2 * border_thickness, -2 * border_thickness))
         self._put(key, surf, surf)

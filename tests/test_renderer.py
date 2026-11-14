@@ -369,3 +369,15 @@ def test_debug_renderer_hit_tests_like_the_wrapped_one():
     debugging(ui)
 
     assert ui.renderer.select_element_at(ui.top(), pos) is button
+
+
+def test_border_without_background_leaves_the_inside_clear():
+    outline = Gap(size=(40.0, 20.0), border_thickness=2, border_color="#FF0000FF", is_selectable=True)
+    ui = Interface(size=SIZE)
+    ui.push(Panel(root_elements=[outline]))
+    surface = ui.render()
+    rect = hit_rect_of(ui, outline)
+
+    assert surface.get_at(rect.topleft) == pygame.Color("#FF0000FF")
+    assert surface.get_at((rect.left + 1, rect.centery)) == pygame.Color("#FF0000FF")
+    assert surface.get_at(rect.center) == pygame.Color(Panel().root_background_color)
