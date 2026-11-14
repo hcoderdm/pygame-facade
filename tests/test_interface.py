@@ -5,8 +5,8 @@ Interface: events in, GUI surface out.
 import pygame
 import pytest
 
-from facade import Button, HorizontalDivision, InputField, Interface, Menu, PrimaryButton, Selector, Slider, Toggle
-from sample_menus import Overlay, Title
+from facade import Button, Element, HorizontalDivision, InputField, Interface, Menu, PrimaryButton, Selector, Slider, Toggle
+from sample_menus import Overlay, Title, selected_label
 
 SIZE = (800, 600)
 
@@ -187,12 +187,12 @@ def test_up_down_and_tab_stop_at_the_ends(ui):
     ui.render()
 
     tap(ui, pygame.K_UP)
-    assert menu.get_selected_element().label.text == "START"
+    assert selected_label(menu) == "START"
     for _ in range(5):
         tap(ui, pygame.K_DOWN)
-    assert menu.get_selected_element().label.text == "QUIT"
+    assert selected_label(menu) == "QUIT"
     tap(ui, pygame.K_TAB)
-    assert menu.get_selected_element().label.text == "QUIT"
+    assert selected_label(menu) == "QUIT"
 
 
 def test_left_and_right_move_between_buttons_in_a_row(ui):
@@ -212,7 +212,7 @@ def test_left_and_right_move_between_buttons_in_a_row(ui):
 
 def test_moving_focus_scrolls_it_into_view():
     ui = Interface(size=(400, 120), use_hand_cursor=False)
-    buttons = [Button(label=Button.ButtonText(text=f"B{idx}")) for idx in range(10)]
+    buttons: list[Element] = [Button(label=Button.ButtonText(text=f"B{idx}")) for idx in range(10)]
     menu = Menu(root_elements=buttons)
     ui.push(menu)
     ui.render()
@@ -405,7 +405,7 @@ def test_clicking_elsewhere_while_typing_cancels_invalid_text(ui):
 
 def test_a_key_scrolls_back_to_the_keys_place_before_moving():
     ui = Interface(size=(400, 120), use_hand_cursor=False)
-    buttons = [Button(label=Button.ButtonText(text=f"B{idx}")) for idx in range(10)]
+    buttons: list[Element] = [Button(label=Button.ButtonText(text=f"B{idx}")) for idx in range(10)]
     menu = Menu(root_elements=buttons)
     ui.push(menu)
     ui.render()

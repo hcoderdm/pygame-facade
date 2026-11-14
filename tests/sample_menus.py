@@ -10,6 +10,13 @@ from facade import AlignmentType, Button, InputField, Menu, NormalText, TitleTex
 _PARAGRAPH = " ".join(["The quick brown fox jumps over the lazy dog."] * 12)
 
 
+def selected_label(menu: Menu) -> str:
+    """The label text of the button selected in ``menu``."""
+    element = menu.get_selected_element()
+    assert isinstance(element, Button)
+    return element.label.text
+
+
 @dataclass(kw_only=True)
 class Title(Menu):
     """An opaque full-window menu with a few buttons, like a start screen."""

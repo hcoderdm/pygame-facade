@@ -10,7 +10,6 @@ import math
 import uuid
 
 from .elements import (
-    RGBA,
     Color,
     AlignmentType,
     Element,
@@ -56,7 +55,7 @@ class Menu(ABC):
     root_background_color: Color = ThemeColorType.BACKGROUND
     root_background_alpha: int = 0xFF
     root_border_thickness: int = 0
-    root_border_color: RGBA = "#00000000"
+    root_border_color: Color = "#00000000"
     root_is_flexible: bool = False
     root_is_selectable: bool = False
     root_is_visible: bool = True

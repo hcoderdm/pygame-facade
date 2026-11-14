@@ -513,7 +513,7 @@ class MenuRenderer:
     @_compose_content.register(TextBlock)
     def _(self, element: TextBlock, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
         wrap_pw = self._get_block_pw(space)
-        paragraphs = [self._make_paragraph(element, paragraph, wrap_pw) for paragraph in element.paragraphs]
+        paragraphs: list[Element] = [self._make_paragraph(element, paragraph, wrap_pw) for paragraph in element.paragraphs]
         body = VerticalDivision(elements=paragraphs, gap=(0.0, element.paragraph_gap_ph), justify=JustifyType.START)
         return _MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
 
@@ -713,7 +713,7 @@ class MenuRenderer:
         fraction = element.get_fraction(value)
         is_altered = isinstance(element, Slider) and element.is_edited
 
-        def box(elements: list[Element], pw: int, border_color: RGBA, gap_pw: int = 0) -> HorizontalDivision:
+        def box(elements: list[Element], pw: int, border_color: Color, gap_pw: int = 0) -> HorizontalDivision:
             return HorizontalDivision(
                 elements=elements, size=(pw, size_ph), padding=padding, gap=(gap_pw, 0.0), alignment=element.alignment,
                 background_color=element.background_color, background_alpha=element.background_alpha,

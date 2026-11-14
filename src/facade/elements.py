@@ -178,14 +178,14 @@ class Element(ABC):
     overflow: OverflowType = OverflowType.EXTEND
     rotation: RotationType = RotationType.NONE
 
-    background_color: RGBA = WHITE
+    background_color: Color = WHITE
     background_alpha: int = 0xFF
 
     border_thickness: int = 0  # Width of border in pixels, 0 is no border
-    border_color: RGBA = TRANSPARENT
+    border_color: Color = TRANSPARENT
     border_alpha: int = 0xFF
 
-    shadow_color: RGBA = TRANSPARENT
+    shadow_color: Color = TRANSPARENT
     shadow_alpha: int = 0x80
     shadow_scale: float = 1.0
     shadow_offset: Measure = (3.0, 3.0)
@@ -244,8 +244,8 @@ class Division(Element):
     gap: Measure = (4.0, 4.0)  # Spacing between internal elements
     gap_measure: MeasureType = MeasureType.ABSOLUTE
 
-    background_color: RGBA = TRANSPARENT
-    shadow_color: RGBA = TRANSPARENT
+    background_color: Color = TRANSPARENT
+    shadow_color: Color = TRANSPARENT
 
     is_selectable: bool = False  # Containers are not directly selectable
     is_expandable: bool = False
@@ -287,8 +287,8 @@ class Gap(Element):
     offset: Measure = (0.0, 0.0)
     padding: Measure = (0.0, 0.0)
 
-    background_color: RGBA = TRANSPARENT
-    shadow_color: RGBA = TRANSPARENT
+    background_color: Color = TRANSPARENT
+    shadow_color: Color = TRANSPARENT
 
     is_flexible: bool = False
     is_selectable: bool = False
@@ -324,14 +324,14 @@ class Text(Element):
 
     text: str = ""  # Text content to display
     text_color: Color = ThemeColorType.TEXT_NORMAL
-    text_background: RGBA = TRANSPARENT  # Highlight color
+    text_background: Color = TRANSPARENT  # Highlight color
     text_alpha: int = 0xFF
     text_decorations: TextDecorationType = TextDecorationType.NONE
 
     font_name: str = "editundo.ttf"  # Font family filename for text rendering
     font_size: int = NATIVE_FONT_SIZE  # Font size in pixels for text rendering
 
-    background_color: RGBA = TRANSPARENT
+    background_color: Color = TRANSPARENT
     is_selectable: bool = False  # Static labels are not selectable
     is_wrappable: bool = False
 
@@ -441,7 +441,7 @@ class Image(Element):
     alignment: AlignmentType = AlignmentType.BOTTOMRIGHT
 
     is_fixed: bool = True
-    background_color: RGBA = TRANSPARENT
+    background_color: Color = TRANSPARENT
 
     is_selectable: bool = False  # Images are not selectable
 
@@ -478,7 +478,7 @@ class TextBlock(Element):
     line_gap_ph: int = 6  # From the baseline of one line to the capitals of the next
     paragraph_gap_ph: int = 14
 
-    background_color: RGBA = TRANSPARENT
+    background_color: Color = TRANSPARENT
     is_selectable: bool = False
 
 
@@ -523,7 +523,7 @@ class CreditList(Element):
     leader_gap_pw: int = 6  # Kept clear between the leader and the text on either side
     row_gap_ph: int = 6
 
-    background_color: RGBA = TRANSPARENT
+    background_color: Color = TRANSPARENT
     is_selectable: bool = False
 
 
@@ -545,7 +545,7 @@ class SectionHeader(Element):
     rule_ph: int = 2
     rule_gap_pw: int = 6  # Between the label and the rule
 
-    background_color: RGBA = TRANSPARENT
+    background_color: Color = TRANSPARENT
     is_selectable: bool = False
 
 

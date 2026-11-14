@@ -31,6 +31,7 @@ def test_roles_are_drawn_in_the_interface_theme():
 
     surface = ui.render()
 
+    assert surface is not None
     assert surface.get_at((0, 0)) == pygame.Color("#00FF00FF")
 
 
@@ -43,6 +44,7 @@ def test_switching_theme_redraws_without_counting_as_an_edit():
     ui.theme = GREEN_THEME
     second = ui.render()
 
+    assert first is not None and second is not None
     assert first.get_at((0, 0)) == pygame.Color(DEFAULT_THEME.background)
     assert second.get_at((0, 0)) == pygame.Color("#00FF00FF")
     assert Element._render_version == version
@@ -69,7 +71,9 @@ def test_text_drawn_before_a_theme_change_is_not_reused_after_it():
     ui.theme = GREEN_THEME
     surface = ui.render()
 
-    rect = next(rect for hit, rect in ui.renderer._menu_tree.hit_rects if hit is text)
+    tree = ui.renderer._menu_tree
+    assert surface is not None and tree is not None
+    rect = next(rect for hit, rect in tree.hit_rects if hit is text)
     pixels = {tuple(surface.get_at((px, py))) for px in range(rect.left, rect.right) for py in range(rect.top, rect.bottom)}
     assert (0, 0, 255, 255) in pixels  # The new theme's normal text colour
 
@@ -78,7 +82,10 @@ def test_fixed_colours_ignore_the_theme():
     ui = Interface(size=SIZE, theme=GREEN_THEME)
     ui.push(Panel(root_background_color="#FF0000FF"))
 
-    assert ui.render().get_at((0, 0)) == pygame.Color("#FF0000FF")
+    surface = ui.render()
+
+    assert surface is not None
+    assert surface.get_at((0, 0)) == pygame.Color("#FF0000FF")
 
 
 def test_generated_colours_follow_the_theme():
@@ -106,7 +113,9 @@ def test_debug_renderer_passes_its_theme_through():
     ui.theme = GREEN_THEME
 
     assert ui.renderer.renderer.theme is GREEN_THEME
-    assert ui.render().get_at((0, 0)) == pygame.Color("#00FF00FF")
+    surface = ui.render()
+    assert surface is not None
+    assert surface.get_at((0, 0)) == pygame.Color("#00FF00FF")
 
 
 def test_games_read_their_own_colours_from_the_theme():

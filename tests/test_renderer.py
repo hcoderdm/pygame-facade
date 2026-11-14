@@ -8,7 +8,7 @@ import time
 
 import pygame
 
-from facade import DEFAULT_THEME, AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, NormalText, PrimaryButton, ProgressBar, Selector, Slider, Toggle
+from facade import DEFAULT_THEME, AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, MenuRenderer, NormalText, PrimaryButton, ProgressBar, Selector, Slider, Toggle
 from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
@@ -23,7 +23,7 @@ def counting_recomposes(ui):
     """Wrap the renderer's compose step and return a list counting its calls."""
     calls = []
     compose = ui.renderer._compose_tree
-    ui.renderer._compose_tree = lambda *args: calls.append(1) or compose(*args)
+    ui.renderer._compose_tree = lambda menu, size: calls.append(1) or compose(menu, size)
     return calls
 
 
@@ -106,6 +106,7 @@ def test_opaque_menu_is_returned_without_per_pixel_alpha():
     ui.push(Title())
 
     surface = ui.render()
+    assert surface is not None
 
     assert surface.get_size() == SIZE
     assert not surface.get_flags() & pygame.SRCALPHA
@@ -121,6 +122,7 @@ def test_menu_smaller_than_window_keeps_alpha():
     ui.push(Panel(root_elements=[NormalText(text="hi")]))
 
     surface = ui.render()
+    assert surface is not None
 
     assert surface.get_flags() & pygame.SRCALPHA
     assert surface.get_at((SIZE[0] - 1, SIZE[1] - 1)).a == 0
@@ -136,8 +138,15 @@ def drawn(color):
     return pygame.Color(DEFAULT_THEME.get_rgba(color))
 
 
+def tree_of(renderer: MenuRenderer | DebugRenderer):
+    """The tree ``renderer`` last composed, which exists once it has rendered."""
+    tree = renderer._menu_tree
+    assert tree is not None
+    return tree
+
+
 def hit_rect_of(ui, element):
-    return next(rect for hit, rect in ui.renderer._menu_tree.hit_rects if hit is element)
+    return next(rect for hit, rect in tree_of(ui.renderer).hit_rects if hit is element)
 
 
 def test_scrolling_reuses_the_tree():
@@ -209,6 +218,7 @@ def test_text_is_centred_on_its_ink():
     ui.fonts.add_dir(str(FONTS))
     ui.push(Panel(root_elements=[Gap(is_selectable=True), button]))  # The gap holds the selection, so the label keeps its colour
     surface = ui.render()
+    assert surface is not None
     box = hit_rect_of(ui, button).inflate(-2, -2)  # Inside the border
 
     ink = [(px, py) for px in range(box.left, box.right) for py in range(box.top, box.bottom) if surface.get_at((px, py)) == pygame.Color("#FF0000FF")]
@@ -223,6 +233,7 @@ def test_selected_slider_outlines_only_its_bar():
     ui = Interface(size=SIZE)
     ui.push(Panel(root_elements=[slider]))
     surface = ui.render()
+    assert surface is not None
     rect = hit_rect_of(ui, slider)
 
     assert surface.get_at((rect.left, rect.centery)) == drawn(slider.selected_border_color)
@@ -232,11 +243,12 @@ def test_selected_slider_outlines_only_its_bar():
 def test_clicks_on_a_bar_reach_the_slider():
     slider = Slider()
     ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[slider]))
+    menu = Panel(root_elements=[slider])
+    ui.push(menu)
     ui.render()
     rect = hit_rect_of(ui, slider)
 
-    assert ui.renderer.find_elements_at(ui.top(), rect.center)[0] is slider
+    assert ui.renderer.find_elements_at(menu, rect.center)[0] is slider
 
 
 def test_toggle_fills_the_half_for_its_value():
@@ -244,6 +256,7 @@ def test_toggle_fills_the_half_for_its_value():
     ui = Interface(size=SIZE)
     ui.push(Panel(root_elements=[Gap(is_selectable=True), toggle]))  # The gap holds the selection
     surface = ui.render()
+    assert surface is not None
     rect = hit_rect_of(ui, toggle)
     inset = 1 + int(toggle.padding[0])
 
@@ -295,34 +308,38 @@ def test_debug_renderer_with_no_mode_returns_the_wrapped_output():
     ui.push(Title())
     debug = debugging(ui)
 
-    assert ui.render() is debug.renderer._menu_tree.output_surf
+    assert ui.render() is tree_of(debug.renderer).output_surf
 
 
 def test_debug_modes_leave_the_wrapped_output_and_cache_alone():
     ui = Interface(size=SIZE)
-    ui.push(Title())
+    menu = Title()
+    ui.push(menu)
     debug = debugging(ui, use_stats_overlay=True, use_hover_border=True, use_hit_rects=True)
-    clean = pixels(debug.renderer.render(ui.top(), SIZE))
+    clean = pixels(debug.renderer.render(menu, SIZE))
     calls = []
     compose = debug.renderer._compose_tree
-    debug.renderer._compose_tree = lambda *args: calls.append(1) or compose(*args)
+    debug.renderer._compose_tree = lambda menu, size: calls.append(1) or compose(menu, size)
 
     shown = ui.render()
     ui.render()
 
-    assert pixels(debug.renderer._menu_tree.output_surf) == clean
+    assert pixels(tree_of(debug.renderer).output_surf) == clean
     assert pixels(shown) != clean
     assert len(calls) == 0
 
 
 def test_debug_counts_recomposes_not_frames():
     ui = Interface(size=SIZE)
-    ui.push(Title())
+    menu = Title()
+    ui.push(menu)
     debug = debugging(ui)
 
     for _ in range(3):
         ui.render()
-    ui.top().root_elements[1].label.text = "BEGIN"
+    start = menu.root_elements[1]
+    assert isinstance(start, Button)
+    start.label.text = "BEGIN"
     ui.render()
 
     assert (debug._counts["fps"], debug._counts["composes"]) == (4, 2)
@@ -334,19 +351,21 @@ def test_tree_records_rects_of_unselectable_elements():
     ui.push(Panel(root_elements=[label]))
     ui.render()
 
-    assert any(element is label for element, _ in ui.renderer._menu_tree.element_rects)
+    assert any(element is label for element, _ in tree_of(ui.renderer).element_rects)
 
 
 def test_hover_border_inverts_only_the_pixels_on_its_edge():
     button = Button(label=Button.ButtonText(text="GO"), background_color="#204060FF")
     ui = Interface(size=SIZE)
-    ui.push(Panel(root_elements=[button]))
+    menu = Panel(root_elements=[button])
+    ui.push(menu)
     debug = debugging(ui, use_hover_border=True)
-    plain = debug.renderer.render(ui.top(), SIZE)
-    rect = next(rect for hit, rect in debug.renderer._menu_tree.hit_rects if hit is button)
+    plain = debug.renderer.render(menu, SIZE)
+    rect = next(rect for hit, rect in tree_of(debug.renderer).hit_rects if hit is button)
     debug.get_hovered_element = lambda menu: (button, rect)
 
     outlined = ui.render()
+    assert outlined is not None
 
     before, after = plain.get_at(rect.topleft), outlined.get_at(rect.topleft)
     assert (after.r, after.g, after.b, after.a) == (255 - before.r, 255 - before.g, 255 - before.b, 255)
@@ -359,20 +378,22 @@ def test_hit_rects_outline_selectable_elements():
     debug = debugging(ui, use_hit_rects=True)
 
     outlined = ui.render()
+    assert outlined is not None
 
-    rect = debug.renderer._menu_tree.hit_rects[0][1]
+    rect = tree_of(debug.renderer).hit_rects[0][1]
     assert outlined.get_at(rect.topleft) == pygame.Color("#00FF80FF")
 
 
 def test_debug_renderer_hit_tests_like_the_wrapped_one():
     ui = Interface(size=SIZE)
-    ui.push(Title())
+    menu = Title()
+    ui.push(menu)
     ui.render()
-    button = ui.top().root_elements[1]
+    button = menu.root_elements[1]
     pos = hit_rect_of(ui, button).center
     debugging(ui)
 
-    assert ui.renderer.select_element_at(ui.top(), pos) is button
+    assert ui.renderer.select_element_at(menu, pos) is button
 
 
 def test_border_without_background_leaves_the_inside_clear():
@@ -380,6 +401,7 @@ def test_border_without_background_leaves_the_inside_clear():
     ui = Interface(size=SIZE)
     ui.push(Panel(root_elements=[outline]))
     surface = ui.render()
+    assert surface is not None
     rect = hit_rect_of(ui, outline)
 
     assert surface.get_at(rect.topleft) == pygame.Color("#FF0000FF")
@@ -447,6 +469,7 @@ def test_pointer_over_nothing_lights_nothing():
     ui.push(menu)
     menu.set_pointer_leading(True)
     surface = ui.render()
+    assert surface is not None
 
     assert surface.get_at(hit_rect_of(ui, button).topleft) == drawn(button.border_color)
 
@@ -473,7 +496,7 @@ def test_cursor_in_an_empty_field_sits_on_the_hint_without_moving_it(monkeypatch
     ui.render()
 
     def text_rect(text):
-        return next(rect for drawn, rect in ui.renderer._menu_tree.element_rects if isinstance(drawn, NormalText) and drawn.text == text)
+        return next(rect for drawn, rect in tree_of(ui.renderer).element_rects if isinstance(drawn, NormalText) and drawn.text == text)
 
     closed_hint = text_rect("[ESC]")
     monkeypatch.setattr(time, "monotonic", lambda: 0.0)
@@ -492,7 +515,7 @@ def test_selector_counts_its_position_beside_it_in_one_input_width():
     ui.render()
 
     def texts():
-        return [drawn.text for drawn, _ in ui.renderer._menu_tree.element_rects if isinstance(drawn, NormalText)]
+        return [drawn.text for drawn, _ in tree_of(ui.renderer).element_rects if isinstance(drawn, NormalText)]
 
     assert "2" in texts() and "/4" in texts() and "/2" not in texts()
     assert hit_rect_of(ui, selector).width == hit_rect_of(ui, plain).width
@@ -509,7 +532,7 @@ def test_selector_counter_mutes_the_total_and_marks_a_changed_position():
     selector.next()
     ui.render()
 
-    colors = {drawn.text: drawn.text_color for drawn, _ in ui.renderer._menu_tree.element_rects if isinstance(drawn, NormalText)}
+    colors = {drawn.text: drawn.text_color for drawn, _ in tree_of(ui.renderer).element_rects if isinstance(drawn, NormalText)}
     assert colors["3"] == selector.altered_selection_color
     assert colors["/4"] == selector.count_text.text_color
 
@@ -526,6 +549,7 @@ def test_primary_button_bar_has_an_even_gap():
     ui = Interface(size=SIZE)
     ui.push(Panel(root_elements=[Gap(is_selectable=True), button]))  # The gap holds the selection
     surface = ui.render()
+    assert surface is not None
     box = hit_rect_of(ui, button).inflate(-2, -2)  # Inside the border
 
     assert bar_margins(surface, box, drawn(button.fill_color)) == (3, 3, 3, 3)
@@ -537,6 +561,7 @@ def test_lit_primary_button_lights_its_bar_and_border():
     ui = Interface(size=SIZE)
     ui.push(Panel(root_elements=[button]))
     surface = ui.render()
+    assert surface is not None
     rect = hit_rect_of(ui, button)
 
     assert surface.get_at(rect.topleft) == drawn(button.selected_border_color)

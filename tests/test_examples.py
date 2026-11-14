@@ -10,6 +10,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 
 from menus import Settings, Start  # noqa: E402
+from sample_menus import selected_label  # noqa: E402
 
 from facade import Button, HorizontalDivision, InputField, SectionHeader, Selector, Slider, Toggle, VerticalDivision  # noqa: E402
 
@@ -22,7 +23,7 @@ class Difficulty(Enum):
 def test_start_selects_its_first_button():
     menu = Start()
 
-    assert menu.get_selected_element().label.text == "PLAY"
+    assert selected_label(menu) == "PLAY"
 
 
 def test_settings_builds_an_editor_per_uppercase_attribute():
@@ -63,6 +64,7 @@ def test_settings_writes_edits_back():
     settings = SimpleNamespace(NAME="PLAYER", DIFFICULTY=Difficulty.EASY)
     menu = Settings(settings=settings)
     name_field, difficulty = [e for e in menu._selectable_elements if not isinstance(e, Button)]
+    assert isinstance(name_field, InputField) and isinstance(difficulty, Selector)
 
     name_field.open()
     name_field.append("2")
@@ -76,6 +78,7 @@ def test_settings_writes_edits_back():
 def test_settings_slider_writes_edits_back():
     settings = SimpleNamespace(VOLUME=0.5)
     (volume,) = [e for e in Settings(settings=settings)._selectable_elements if not isinstance(e, Button)]
+    assert isinstance(volume, Slider)
 
     volume.increment()
 

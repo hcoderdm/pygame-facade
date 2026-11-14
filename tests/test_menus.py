@@ -3,12 +3,12 @@ Menus and the menu stack.
 """
 
 from facade import MenuManager
-from sample_menus import Overlay, Title
+from sample_menus import Overlay, Title, selected_label
 
 
 def test_selection_moves_between_selectable_elements_and_stops_at_ends():
     menu = Title()
-    labels = lambda: menu.get_selected_element().label.text
+    labels = lambda: selected_label(menu)
 
     assert labels() == "START"
     menu.move_selected_up()
@@ -22,7 +22,7 @@ def test_selection_moves_between_selectable_elements_and_stops_at_ends():
 
 def test_move_selected_by_wraps_in_reading_order():
     menu = Title()
-    labels = lambda: menu.get_selected_element().label.text
+    labels = lambda: selected_label(menu)
 
     menu.move_selected_by(-1)
     assert labels() == "QUIT"

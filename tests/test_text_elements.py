@@ -25,7 +25,9 @@ def rendered(element):
     ui.fonts.add_dir(str(FONTS))
     ui.push(Panel(root_elements=[element]))
     surface = ui.render()
-    rect = next(rect for hit, rect in ui.renderer._menu_tree.element_rects if hit is element)
+    tree = ui.renderer._menu_tree
+    assert tree is not None
+    rect = next(rect for hit, rect in tree.element_rects if hit is element)
     return ui, surface, rect
 
 
