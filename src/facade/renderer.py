@@ -19,7 +19,9 @@ from .elements import (
     RGBA,
     TRANSPARENT,
     AlignmentType,
+    BulletList,
     Button,
+    CreditList,
     Division,
     Element,
     Fill,
@@ -31,10 +33,13 @@ from .elements import (
     MeasureType,
     OverflowType,
     ProgressBar,
+    Paragraph,
     RotationType,
+    SectionHeader,
     Selector,
     Slider,
     Text,
+    TextBlock,
     TextDecorationType,
     Toggle,
     VerticalDivision,
@@ -477,6 +482,72 @@ class MenuRenderer:
     def _(self, element: Image, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
         return _MenuTree.Node(element, content_surf=self.images.get_image(element.image_path))
 
+    @_compose_content.register(TextBlock)
+    def _(self, element: TextBlock, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        wrap_pw = self._get_block_pw(space)
+        paragraphs = [self._make_paragraph(element, paragraph, wrap_pw) for paragraph in element.paragraphs]
+        body = VerticalDivision(elements=paragraphs, gap=(0.0, element.paragraph_gap_ph), justify=JustifyType.START)
+        return _MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
+
+    @_compose_content.register(BulletList)
+    def _(self, element: BulletList, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        item_pw = max(0, self._get_block_pw(space) - element.bullet_pw - element.bullet_gap_pw)
+        # The bullet is centred on the first line's capitals, whatever the font size
+        bullet_py = max(0, (self._measure_cap_ph(element.body_text) - element.bullet_pw) // 2)
+        items = []
+        for paragraph in element.paragraphs:
+            bullet = VerticalDivision(
+                elements=[Gap(size=(0.0, bullet_py)), Gap(size=(element.bullet_pw, element.bullet_pw), background_color=element.bullet_color)],
+                gap=(0.0, 0.0), justify=JustifyType.START,
+            )
+            items.append(HorizontalDivision(
+                elements=[bullet, self._make_paragraph(element, paragraph, item_pw)],
+                gap=(element.bullet_gap_pw, 0.0), justify=JustifyType.START,
+            ))
+        body = VerticalDivision(elements=items, gap=(0.0, element.paragraph_gap_ph), justify=JustifyType.START)
+        return _MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
+
+    @_compose_content.register(CreditList)
+    def _(self, element: CreditList, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        row_pw = self._get_block_pw(space)
+        rows = []
+        for role, name in element.credits:
+            role_text = replace(element.role_text, text=role)
+            name_text = replace(element.name_text, text=name)
+            free_pw = row_pw - self._measure_text(role_text) - self._measure_text(name_text) - 2 * element.leader_gap_pw
+            count = max(0, (free_pw + element.dot_gap_pw) // (element.dot_pw + element.dot_gap_pw))
+            leader_pw = count * (element.dot_pw + element.dot_gap_pw) - element.dot_gap_pw if count else 0
+            # Leftover pixels go before the leader, so every leader ends the same distance from its name
+            parts: list[Element] = [role_text, Gap(size=(element.leader_gap_pw + free_pw - leader_pw, 0.0))]
+            if count:
+                dots = _SegmentStrip(
+                    count=count, filled=count, segment_pw=element.dot_pw, segment_ph=element.dot_pw,
+                    gap_pw=element.dot_gap_pw, fill_color=element.leader_color, empty_color=element.leader_color,
+                )
+                # Dropped to the baseline so the dots run under the text, not through it
+                baseline_py = max(0, self._measure_cap_ph(role_text) - element.dot_pw)
+                parts += [
+                    VerticalDivision(elements=[Gap(size=(0.0, baseline_py)), dots], gap=(0.0, 0.0), justify=JustifyType.START),
+                    Gap(size=(element.leader_gap_pw, 0.0)),
+                ]
+            parts.append(name_text)
+            rows.append(HorizontalDivision(elements=parts, gap=(0.0, 0.0), justify=JustifyType.START))
+        body = VerticalDivision(elements=rows, gap=(0.0, element.row_gap_ph), justify=JustifyType.START)
+        return _MenuTree.Node(element, children=[self._compose_node(body, tree, space)])
+
+    @_compose_content.register(SectionHeader)
+    def _(self, element: SectionHeader, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
+        label = replace(element.label, is_wrappable=False)
+        rule_pw = max(0, self._get_block_pw(space) - self._measure_text(label) - element.rule_gap_pw)
+        # Centred on the label's capitals; an odd leftover puts the extra pixel below
+        rule_py = max(0, (self._measure_cap_ph(label) - element.rule_ph) // 2)
+        rule = VerticalDivision(
+            elements=[Gap(size=(0.0, rule_py)), Gap(size=(rule_pw, element.rule_ph), background_color=element.rule_color)],
+            gap=(0.0, 0.0), justify=JustifyType.START,
+        )
+        row = HorizontalDivision(elements=[label, rule], gap=(element.rule_gap_pw, 0.0), justify=JustifyType.START)
+        return _MenuTree.Node(element, children=[self._compose_node(row, tree, space)])
+
     @_compose_content.register(_SegmentStrip)
     def _(self, element: _SegmentStrip, tree: _MenuTree, space: _MenuTree.Space) -> _MenuTree.Node:
         strip_pw = element.count * element.segment_pw + max(0, element.count - 1) * element.gap_pw
@@ -604,6 +675,59 @@ class MenuRenderer:
             offset=element.offset, offset_measure=element.offset_measure, margin=element.margin, margin_measure=element.margin_measure,
             rotation=element.rotation, is_fixed=element.is_fixed, is_selectable=element.is_selectable,
         )
+
+    @staticmethod
+    def _get_block_pw(space: _MenuTree.Space) -> int:
+        # A set width wins; with none, text blocks fill all the room they are given
+        return space.range_pw.start or space.range_pw.stop
+
+    def _make_paragraph(self, element: TextBlock, paragraph: Paragraph, wrap_pw: int) -> VerticalDivision:
+        spans = [paragraph] if isinstance(paragraph, str) else paragraph
+        words = [
+            (style, word)
+            for span in spans
+            for style in [replace(element.body_text, text="") if isinstance(span, str) else replace(span, text="")]
+            for word in (span if isinstance(span, str) else span.text).split()
+        ]
+
+        # Greedy wrapping on drawn widths: a word moves down when the line with it would pass wrap_pw
+        lines: list[list[tuple[Text, str]]] = []
+        line: list[tuple[Text, str]] = []
+        line_pw = 0
+        for style, word in words:
+            word_pw = self._measure_text(replace(style, text=word))
+            next_pw = line_pw + self._measure_space_pw(style) + word_pw if line else word_pw
+            if line and next_pw > wrap_pw:
+                lines.append(line)
+                line, next_pw = [], word_pw
+            line.append((style, word))
+            line_pw = next_pw
+        if line:
+            lines.append(line)
+
+        rows = []
+        for line in lines:
+            # Neighbouring words in one style share a Text, so a line is a few surfaces rather than one per word
+            runs: list[tuple[Text, list[str]]] = []
+            for style, word in line:
+                if runs and runs[-1][0] == style:
+                    runs[-1][1].append(word)
+                else:
+                    runs.append((style, [word]))
+            parts: list[Element] = []
+            for idx, (style, run_words) in enumerate(runs):
+                if idx:
+                    parts.append(Gap(size=(self._measure_space_pw(style), 0.0)))
+                parts.append(replace(style, text=" ".join(run_words), is_wrappable=False, justify=JustifyType.START))
+            rows.append(HorizontalDivision(elements=parts, gap=(0.0, 0.0), justify=JustifyType.START))
+        return VerticalDivision(elements=rows, gap=(0.0, element.line_gap_ph), justify=JustifyType.START)
+
+    def _measure_space_pw(self, text: Text) -> int:
+        # The gap a space leaves between two drawn words, including the spacing the layout trims off the first
+        return self._measure_text(replace(text, text="x x")) - 2 * self._measure_text(replace(text, text="x"))
+
+    def _measure_cap_ph(self, text: Text) -> int:
+        return self._text_cache.get_surf(replace(text, text="H", is_wrappable=False), 0)[1].height
 
     def _measure_text(self, text: Text) -> int:
         """Laid-out width of ``text`` on one line."""

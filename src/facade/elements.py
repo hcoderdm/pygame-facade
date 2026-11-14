@@ -31,6 +31,8 @@ COLOR_PALETTE_NEUTRAL: RGBA = "#30384EFF"  # Read-only boxes, unavailable parts 
 COLOR_PALETTE_TEXT: RGBA = "#E0E0E0FF"
 COLOR_PALETTE_EDITED: RGBA = "#F0B443FF"  # A value that differs from the original
 COLOR_PALETTE_BORDER: RGBA = "#606060FF"  # Border of read-only boxes
+COLOR_PALETTE_MUTED: RGBA = "#6E7896FF"  # Secondary text, readable where NEUTRAL would vanish
+COLOR_PALETTE_HEADING: RGBA = "#F0B443FF"  # Headings and picked-out words
 
 TRANSPARENT: RGBA = "#00000000"
 BLACK: RGBA = "#000000FF"
@@ -339,6 +341,9 @@ class Text(Element):
     is_wrappable: bool = False
 
 
+Paragraph = str | list[str | Text]  # One paragraph of a TextBlock: plain text, or strings mixed with styled spans
+
+
 @dataclass(kw_only=True, repr=False)
 class NormalText(Text):
     """
@@ -444,6 +449,109 @@ class Image(Element):
     background_color: RGBA = TRANSPARENT
 
     is_selectable: bool = False  # Images are not selectable
+
+
+@dataclass(kw_only=True, repr=False)
+class TextBlock(Element):
+    """
+    Paragraphs wrapped to the element's width, or to all the room it is given
+    when ``size`` has no width. A paragraph is a string in ``body_text``'s
+    style, or a list of strings and ``Text`` spans, where each span keeps its
+    own colour so single words can be picked out. Lines are spaced by the
+    gap between one line's capitals and the next, not by the font's line
+    height.
+    """
+
+    @dataclass(kw_only=True, repr=False)
+    class BodyText(NormalText):
+        """The style of plain strings in ``paragraphs``."""
+
+    @dataclass(kw_only=True, repr=False)
+    class EmphasisText(NormalText):
+        """A span picked out in the heading colour."""
+
+        text_color: RGBA = COLOR_PALETTE_HEADING
+
+    @dataclass(kw_only=True, repr=False)
+    class AsideText(NormalText):
+        """A span set back in the muted colour."""
+
+        text_color: RGBA = COLOR_PALETTE_MUTED
+
+    paragraphs: list[Paragraph] = field(default_factory=list)
+    body_text: Text = field(default_factory=BodyText)
+    line_gap_ph: int = 6  # From the baseline of one line to the capitals of the next
+    paragraph_gap_ph: int = 14
+
+    background_color: RGBA = TRANSPARENT
+    is_selectable: bool = False
+
+
+@dataclass(kw_only=True, repr=False)
+class BulletList(TextBlock):
+    """
+    A ``TextBlock`` whose paragraphs are list items, each marked with a
+    square bullet centred on its first line. Wrapped lines indent under the
+    item's text, not under the bullet.
+    """
+
+    paragraph_gap_ph: int = 8
+    bullet_color: RGBA = COLOR_PALETTE_HEADING
+    bullet_pw: int = 4
+    bullet_gap_pw: int = 6  # Between the bullet and the item's text
+
+
+@dataclass(kw_only=True, repr=False)
+class CreditList(Element):
+    """
+    Rows of a role on the left and a name on the right, across the element's
+    width, joined by a dotted leader that sits on the baseline.
+    """
+
+    @dataclass(kw_only=True, repr=False)
+    class RoleText(NormalText):
+        """The style of each role."""
+
+        text_color: RGBA = COLOR_PALETTE_MUTED
+
+    @dataclass(kw_only=True, repr=False)
+    class NameText(NormalText):
+        """The style of each name."""
+
+    credits: list[tuple[str, str]] = field(default_factory=list)  # (role, name) pairs
+    role_text: Text = field(default_factory=RoleText)
+    name_text: Text = field(default_factory=NameText)
+
+    leader_color: RGBA = COLOR_PALETTE_NEUTRAL
+    dot_pw: int = 2  # Each dot is square
+    dot_gap_pw: int = 2
+    leader_gap_pw: int = 6  # Kept clear between the leader and the text on either side
+    row_gap_ph: int = 6
+
+    background_color: RGBA = TRANSPARENT
+    is_selectable: bool = False
+
+
+@dataclass(kw_only=True, repr=False)
+class SectionHeader(Element):
+    """
+    A label in the heading colour followed by a rule to the element's width,
+    centred on the label's capitals, for splitting a menu into sections.
+    """
+
+    @dataclass(kw_only=True, repr=False)
+    class HeaderText(NormalText):
+        """The style of the section's name."""
+
+        text_color: RGBA = COLOR_PALETTE_HEADING
+
+    label: Text = field(default_factory=HeaderText)
+    rule_color: RGBA = COLOR_PALETTE_BORDER
+    rule_ph: int = 2
+    rule_gap_pw: int = 6  # Between the label and the rule
+
+    background_color: RGBA = TRANSPARENT
+    is_selectable: bool = False
 
 
 @dataclass(kw_only=True, repr=False)
