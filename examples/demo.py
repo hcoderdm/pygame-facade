@@ -73,9 +73,9 @@ def main() -> int:
         interface.clear_stack()
         interface.push_stack(Start)
 
-    interface.add_menu(Settings(settings=settings, sections=SETTINGS_SECTIONS, on_return=interface.pop_stack))
-    interface.add_menu(About(on_return=interface.pop_stack))
-    interface.add_menu(Pause(on_resume=interface.pop_stack, on_restart=interface.pop_stack, on_exit=back_to_title))
+    interface.add(Settings(settings=settings, sections=SETTINGS_SECTIONS, on_return=interface.pop_stack))
+    interface.add(About(on_return=interface.pop_stack))
+    interface.add(Pause(on_resume=interface.pop_stack, on_restart=interface.pop_stack, on_exit=back_to_title))
     interface.push_stack(
         Start(
             on_start=interface.clear_stack,  # Close every menu and play.

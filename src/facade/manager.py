@@ -7,7 +7,34 @@ from typing import TYPE_CHECKING, cast
 
 import pygame
 
-from .elements import Button, InputField, Selector, Slider, Toggle
+from .elements import (
+    BulletList,
+    Button,
+    CreditList,
+    Division,
+    Element,
+    Fill,
+    Gap,
+    HeadingOneText,
+    HeadingThreeText,
+    HeadingTwoText,
+    HorizontalDivision,
+    Image,
+    InputField,
+    InteractiveElement,
+    NormalText,
+    PrimaryButton,
+    ProgressBar,
+    SectionHeader,
+    Selector,
+    Slider,
+    SubtitleText,
+    Text,
+    TextBlock,
+    TitleText,
+    Toggle,
+    VerticalDivision,
+)
 from .menus import Menu
 
 if TYPE_CHECKING:
@@ -17,6 +44,33 @@ if TYPE_CHECKING:
 _POINTER_DEADZONE_PW = 8  # After a key press the pointer must travel this far before it takes focus back.
 _ARROW_DIRECTIONS = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left", pygame.K_RIGHT: "right"}
 _ACTIVATE_KEYS = (pygame.K_RETURN, pygame.K_KP_ENTER)
+_BUILTIN_ELEMENT_TYPES: tuple[type[Element], ...] = (
+    Division,
+    HorizontalDivision,
+    VerticalDivision,
+    Gap,
+    Fill,
+    Text,
+    NormalText,
+    TitleText,
+    SubtitleText,
+    HeadingOneText,
+    HeadingTwoText,
+    HeadingThreeText,
+    Image,
+    TextBlock,
+    BulletList,
+    CreditList,
+    SectionHeader,
+    ProgressBar,
+    InteractiveElement,
+    Button,
+    PrimaryButton,
+    Toggle,
+    Slider,
+    Selector,
+    InputField,
+)
 
 
 class MenuManager:
@@ -28,29 +82,29 @@ class MenuManager:
 
     # -------------------------------------------------------------------------
 
-    def add_menu(self, menu: Menu) -> None:
+    def add(self, menu: Menu) -> None:
         """"""
         self._menus[type(menu)] = menu
 
-    def drop_menu(self, menu_type: type[Menu]) -> None:
+    def drop(self, menu_type: type[Menu]) -> None:
         """"""
         self._menus.pop(menu_type)
 
-    def clear_menus(self) -> None:
+    def clear(self) -> None:
         """"""
         self._menus.clear()
 
     # -------------------------------------------------------------------------
 
-    def get_menu[T: Menu](self, menu_type: type[T]) -> T | None:
+    def get[T: Menu](self, menu_type: type[T]) -> T | None:
         """"""
         return cast("T | None", self._menus.get(menu_type))
 
-    def has_menu(self, menu_type: type[Menu]) -> bool:
+    def has(self, menu_type: type[Menu]) -> bool:
         """"""
         return menu_type in self._menus
 
-    def get_menus(self) -> Iterator[Menu]:
+    def __iter__(self) -> Iterator[Menu]:
         """"""
         return iter(self._menus.values())
 
@@ -95,6 +149,37 @@ class MenuManager:
 
     def get_stack(self) -> Iterator[Menu]:
         return iter(self._stack)
+
+
+class ElementManager:
+    """Keeps the registry of element types that menus can be built from."""
+
+    def __init__(self) -> None:
+        self._elements: set[type[Element]] = set(_BUILTIN_ELEMENT_TYPES)
+
+    # -------------------------------------------------------------------------
+
+    def add(self, element_type: type[Element]) -> None:
+        """"""
+        self._elements.add(element_type)
+
+    def drop(self, element_type: type[Element]) -> None:
+        """"""
+        self._elements.remove(element_type)
+
+    def clear(self) -> None:
+        """"""
+        self._elements.clear()
+
+    # -------------------------------------------------------------------------
+
+    def has(self, element_type: type[Element]) -> bool:
+        """"""
+        return element_type in self._elements
+
+    def __iter__(self) -> Iterator[type[Element]]:
+        """"""
+        return iter(self._elements)
 
 
 # -----------------------------------------------------------------------------

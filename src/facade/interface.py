@@ -13,6 +13,7 @@ import pygame
 from .assets import FontManager, ImageManager
 from .elements import InputField
 from .manager import (
+    ElementManager,
     MenuManager,
     handle_menu_keydown,
     handle_menu_mousebuttondown,
@@ -54,7 +55,8 @@ class Interface:
         self.repeat_delay: float = repeat_delay
         self.repeat_interval: float = repeat_interval
         self._held_key: HeldKey | None = None
-        self.manager: MenuManager = MenuManager()
+        self.menus: MenuManager = MenuManager()
+        self.elements: ElementManager = ElementManager()
         self.renderer: MenuRenderer | DebugRenderer = MenuRenderer(theme)
 
         self._event_handlers: dict[int, Callable[[Menu, pygame.event.Event], bool]] = {
@@ -62,7 +64,7 @@ class Interface:
             pygame.MOUSEBUTTONDOWN: lambda menu, event: handle_menu_mousebuttondown(menu, self.renderer, event),
             pygame.MOUSEBUTTONUP: lambda menu, event: handle_menu_mousebuttonup(menu, self.renderer, event),
             pygame.MOUSEWHEEL: lambda menu, event: handle_menu_mousewheel(menu, self.renderer, event),
-            pygame.KEYDOWN: lambda menu, event: handle_menu_keydown(menu, self.renderer, event, manager=self.manager),
+            pygame.KEYDOWN: lambda menu, event: handle_menu_keydown(menu, self.renderer, event, manager=self.menus),
             pygame.TEXTINPUT: lambda menu, event: handle_menu_textinput(menu, self.renderer, event),
         }
 
@@ -89,38 +91,38 @@ class Interface:
 
     # -------------------------------------------------------------------------
 
-    def add_menu(self, menu: Menu) -> None:
+    def add(self, menu: Menu) -> None:
         """Register ``menu`` so it can later be pushed by its type."""
-        self.manager.add_menu(menu)
+        self.menus.add(menu)
 
     def push_stack(self, menu: Menu | type[Menu]) -> None:
         """
         Open a menu on top of the stack. Pass a menu instance (registered
-        automatically) or the type of a menu registered with ``add_menu``.
+        automatically) or the type of a menu registered with ``add``.
         """
         if isinstance(menu, Menu):
-            self.manager.add_menu(menu)
+            self.menus.add(menu)
             menu = type(menu)
-        if not self.manager.has_menu(menu):
+        if not self.menus.has(menu):
             raise KeyError(f"Invalid {menu=}")
-        self.manager.push_stack(menu)
+        self.menus.push_stack(menu)
 
     def pop_stack(self) -> Menu | None:
         """Close the top menu and return it, or ``None`` if none is open."""
-        return self.manager.pop_stack(keep_root=False)
+        return self.menus.pop_stack(keep_root=False)
 
     def clear_stack(self) -> None:
         """Close every open menu."""
-        self.manager.clear_stack()
+        self.menus.clear_stack()
 
     def top_stack(self) -> Menu | None:
         """The menu currently shown, or ``None``."""
-        return self.manager.top_stack()
+        return self.menus.top_stack()
 
     @property
     def is_showing(self) -> bool:
         """Whether any menu is shown."""
-        return self.manager.top_stack() is not None
+        return self.menus.top_stack() is not None
 
     # -------------------------------------------------------------------------
 
@@ -131,7 +133,7 @@ class Interface:
         """
         if event.type in (pygame.KEYUP, pygame.WINDOWFOCUSLOST):
             return self._release_key(event)
-        menu = self.manager.top_stack()
+        menu = self.menus.top_stack()
         handler = self._event_handlers.get(event.type)
         if menu is None or handler is None:
             return False
@@ -173,7 +175,7 @@ class Interface:
             handle_menu_textinput(menu, self.renderer, pygame.event.Event(pygame.TEXTINPUT, text=held.text))
         else:
             event = pygame.event.Event(pygame.KEYDOWN, key=held.key, mod=held.mod, unicode="", scancode=0)
-            handle_menu_keydown(menu, self.renderer, event, manager=self.manager)
+            handle_menu_keydown(menu, self.renderer, event, manager=self.menus)
 
     @staticmethod
     def _is_typing(menu: Menu) -> bool:
@@ -192,11 +194,11 @@ class Interface:
         is ``SRCALPHA`` and transparent outside the menu. The same surface is
         returned while nothing visible has changed.
         """
-        menu = self.manager.top_stack()
+        menu = self.menus.top_stack()
         if menu is None:
             return None
         self._repeat_held_key(menu)
-        menu = self.manager.top_stack()  # A repeated key can close the menu.
+        menu = self.menus.top_stack()  # A repeated key can close the menu.
         if menu is None:
             return None
         return self.renderer.render(menu, self.size)

@@ -49,6 +49,7 @@ from .elements import (
 )
 from .interface import Interface
 from .manager import (
+    ElementManager,
     MenuManager,
     handle_menu_keydown,
     handle_menu_mousebuttondown,
@@ -118,6 +119,7 @@ __all__ = [
     "Menu",
     # Menu stack and input.
     "MenuManager",
+    "ElementManager",
     "handle_menu_mousemotion",
     "handle_menu_mousebuttondown",
     "handle_menu_mousebuttonup",

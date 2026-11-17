@@ -505,3 +505,14 @@ def test_261113213323_075062ae(interface):
     assert menu.get_lit_id() == field.id
     tap(interface, pygame.K_DOWN)
     assert menu.get_selected_element() is below
+
+
+def test_261116224321_d72fc716(interface):
+    # An interface starts with the built-in element types registered, and a custom type joins them.
+    class Badge(Element):
+        pass
+
+    assert interface.elements.has(Button) and interface.elements.has(HorizontalDivision)
+    assert not interface.elements.has(Element) and not interface.elements.has(Badge)
+    interface.elements.add(Badge)
+    assert interface.elements.has(Badge) and Badge in set(interface.elements)

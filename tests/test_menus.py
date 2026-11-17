@@ -24,8 +24,8 @@ def test_261111232812_863427a4():
 def test_261111232812_c3f63cec():
     # Manager stack keeps root unless asked.
     manager = MenuManager()
-    manager.add_menu(Title())
-    manager.add_menu(Overlay())
+    manager.add(Title())
+    manager.add(Overlay())
     manager.push_stack(Title)
     manager.push_stack(Overlay)
 
