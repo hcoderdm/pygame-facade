@@ -55,7 +55,7 @@ def check_args(args: argparse.Namespace) -> None:
 def init_facade() -> Interface:
     """Build the interface, register fonts and elements, and add the menus."""
 
-    renderer = DebugRenderer(MenuRenderer(THEME))
+    renderer = DebugRenderer(MenuRenderer(THEME, scale=settings.GUI_SCALE.value))
     interface = Interface(size=pygame.display.get_window_size(), renderer=renderer)
 
     interface.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
@@ -145,6 +145,8 @@ def main() -> int:
         screen.fill(interface.theme.get_extra("table"))
         pygame.draw.circle(screen, interface.theme.get_extra("ball"), ball, 20)
         
+        # The Settings menu edits the scale, and setting the same one again is free.
+        interface.scale = settings.GUI_SCALE.value
         if (gui := interface.render()) is not None:
             screen.blit(gui, (0, 0))
         

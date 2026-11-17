@@ -94,6 +94,15 @@ class Interface:
     def theme(self, theme: Theme) -> None:
         self.renderer.theme = theme
 
+    @property
+    def scale(self) -> int:
+        """How many times larger menus are drawn than their elements say. Setting a different scale redraws the open menu at it."""
+        return self.renderer.scale
+
+    @scale.setter
+    def scale(self, scale: int) -> None:
+        self.renderer.scale = scale
+
     # -------------------------------------------------------------------------
 
     def add(self, menu: Menu) -> None:

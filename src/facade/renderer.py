@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Hashable
-from dataclasses import dataclass, field, replace
+import copy
+from dataclasses import dataclass, field, fields, replace
 from functools import singledispatchmethod
 import math
 import time
@@ -31,6 +32,7 @@ from .elements import (
     Image,
     InputField,
     JustifyType,
+    Measure,
     MeasureType,
     OverflowType,
     PrimaryButton,
@@ -287,6 +289,7 @@ class MenuTree:
 
     menu: Menu
     size: tuple[int, int]
+    scale: int
     render_version: int
     selection_id: str | None  # The element drawn with the focused look: the hovered one or the keys' selection.
     pointer_part: str | None = None
@@ -304,11 +307,12 @@ class MenuTree:
         """Whether the facade covers every pixel of the window with alpha 255."""
         return self.root is not None and self.root.is_opaque
 
-    def is_current(self, menu: Menu, size: tuple[int, int]) -> bool:
-        """Whether this tree still shows ``menu`` at ``size``, with no element edited and no rendered cursor glyph changed since."""
+    def is_current(self, menu: Menu, size: tuple[int, int], scale: int) -> bool:
+        """Whether this tree still shows ``menu`` at ``size`` and ``scale``, with no element edited and no rendered cursor glyph changed since."""
         return (
             menu is self.menu
             and size == self.size
+            and scale == self.scale
             and Element._render_version == self.render_version
             and all(input_field.get_cursor_glyph() == glyph for input_field, glyph in self.rendered_glyphs)
         )
@@ -324,11 +328,12 @@ class MenuTree:
 class MenuRenderer:
     """Composes a menu's element tree and returns it as a window-sized surface."""
 
-    def __init__(self, theme: Theme = DEFAULT_THEME) -> None:
+    def __init__(self, theme: Theme = DEFAULT_THEME, scale: int = 1) -> None:
         self.fonts: FontManager = FontManager()
         self.images: ImageManager = ImageManager()
 
         self._theme: Theme = theme
+        self._scale: int = _check_scale(scale)
         self._text_cache = TextCache(self.fonts)
         self._box_cache = BoxCache()
         self._shadow_cache = ShadowCache()
@@ -349,9 +354,25 @@ class MenuRenderer:
             # The caches key on drawn colours, so they stay valid. Only the composed tree is out of date.
             self._menu_tree = None
 
+    @property
+    def scale(self) -> int:
+        """
+        How many times larger menus are laid out than their elements say. Sizes,
+        gaps, offsets and font sizes are multiplied, so the pixel font stays
+        crisp. Border thicknesses are not, and a menu with ``is_scaled`` off
+        is drawn as it is. Setting a different scale redraws the open menu
+        at it.
+        """
+        return self._scale
+
+    @scale.setter
+    def scale(self, scale: int) -> None:
+        # The open tree records its scale, so it is recomposed on the next render.
+        self._scale = _check_scale(scale)
+
     def render(self, menu: Menu, size: tuple[int, int]) -> pygame.Surface:
         tree = self._menu_tree
-        if tree is None or not tree.is_current(menu, size):
+        if tree is None or not tree.is_current(menu, size, self._scale if menu.is_scaled else 1):
             tree = self._menu_tree = self._compose_tree(menu, size)
             self._render_facade(tree)
         return self._present_output(tree)
@@ -359,21 +380,24 @@ class MenuRenderer:
     # -------------------------------------------------------------------------
 
     def _compose_tree(self, menu: Menu, size: tuple[int, int]) -> MenuTree:
-        tree = MenuTree(menu, size, Element._render_version, menu.get_lit_id(), menu.get_pointer_part())
-        tree.root = self._compose_node(menu._div, tree, MenuTree.Space(range(size[0], size[0]), range(size[1], size[1])))
+        scale = self._scale if menu.is_scaled else 1
+        tree = MenuTree(menu, size, scale, Element._render_version, menu.get_lit_id(), menu.get_pointer_part())
+        root = menu._div if scale == 1 else _scale_element(menu._div, scale)
+        tree.root = self._compose_node(root, tree, MenuTree.Space(range(size[0], size[0]), range(size[1], size[1])))
         return tree
 
     def _compose_node(self, element: Element, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
+        hit_target = _get_hit_target(element)
         if not element.is_visible:
-            return MenuTree.Node(element, hit_target=element)
+            return MenuTree.Node(element, hit_target=hit_target)
         if isinstance(element, ProgressBar):
             # A bar is two ordinary boxes side by side. Clicks on either still reach the bar itself.
             node = self._compose_node(self._make_bar_row(element, tree, space), tree, space)
-            node.hit_target = element
+            node.hit_target = hit_target
             return node
         if isinstance(element, Selector) and element.use_number:
-            node = self._compose_node(self._make_selector_row(element, space), tree, space)
-            node.hit_target = element
+            node = self._compose_node(self._make_selector_row(element, tree, space), tree, space)
+            node.hit_target = hit_target
             return node
 
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
@@ -406,7 +430,7 @@ class MenuRenderer:
             inner_pw, inner_ph = max(inner_pw, content_pw), max(inner_ph, content_ph)
         align_px, align_py = self._align_box(element.alignment, inner_pw, inner_ph, content_pw, content_ph)
 
-        node.hit_target = element
+        node.hit_target = hit_target
         node.pw, node.ph = inner_pw + decor_pw, inner_ph + decor_ph
         node.offset = (offset_px, offset_py)
         node.inner_offset = (decor_pw // 2 + align_px, decor_ph // 2 + align_py)
@@ -619,7 +643,7 @@ class MenuRenderer:
 
         # The option gets a fixed slot between the arrows, so changing it never moves them.
         gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
-        zones_pw = self._measure_arrow_zone(element.left_arrow) + self._measure_arrow_zone(element.right_arrow)
+        zones_pw = self._measure_arrow_zone(element.left_arrow, tree) + self._measure_arrow_zone(element.right_arrow, tree)
         slot_pw = max(0, space.range_pw.start - zones_pw - 2 * gap_pw)
         slot = HorizontalDivision(elements=[eff_selection_text], size=(slot_pw, 0.0), alignment=AlignmentType.CENTER, gap=(0.0, 0.0))
         row = HorizontalDivision(elements=[left_zone, slot, right_zone], gap=(gap_pw, 0.0))
@@ -632,7 +656,7 @@ class MenuRenderer:
         eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
 
         glyph = element.get_cursor_glyph()
-        tree.rendered_glyphs.append((element, glyph))
+        tree.rendered_glyphs.append((_get_hit_target(element), glyph))
         eff_value_text = replace(element.value, text=element.get_field() + glyph)
         if not element.authenticate():
             eff_value_text = replace(eff_value_text, text_color=element.invalid_text_color)
@@ -657,7 +681,7 @@ class MenuRenderer:
 
     # -------------------------------------------------------------------------
 
-    def _make_selector_row(self, element: Selector, space: MenuTree.Space) -> HorizontalDivision:
+    def _make_selector_row(self, element: Selector, tree: MenuTree, space: MenuTree.Space) -> HorizontalDivision:
         # The selector box and its number box share the width the selector's ``size`` gives.
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
         # The selector box is a copy without its number, so it is drawn as before. The row holding both is
@@ -670,8 +694,8 @@ class MenuRenderer:
         eff_number_text = replace(element.number_text, text=position)
         if element.is_edited:
             eff_number_text = replace(eff_number_text, text_color=element.altered_selection_color)
-        # The layout trims the spacing after each piece of text, so 1px between them spaces them like one word.
-        number_row = HorizontalDivision(elements=[eff_number_text, replace(element.count_text, text=count)], gap=(1.0, 0.0))
+        # The layout trims the spacing after each piece of text, so one font pixel between them spaces them like one word.
+        number_row = HorizontalDivision(elements=[eff_number_text, replace(element.count_text, text=count)], gap=(float(tree.scale), 0.0))
         number_box = HorizontalDivision(
             elements=[number_row], size=(float(element.number_pw), float(size_ph)), padding=element.padding, padding_measure=element.padding_measure,
             gap=(0.0, 0.0), alignment=AlignmentType.CENTER,
@@ -713,7 +737,7 @@ class MenuRenderer:
                 self._make_arrow_zone(element, element.right_arrow, "right", fraction >= 1.0, is_selected, tree),
             )
             gap_pw = self._resolve_measure(element.gap, MeasureType.ABSOLUTE, space)[0]
-            strip_pw -= self._measure_arrow_zone(element.left_arrow) + self._measure_arrow_zone(element.right_arrow) + 2 * gap_pw
+            strip_pw -= self._measure_arrow_zone(element.left_arrow, tree) + self._measure_arrow_zone(element.right_arrow, tree) + 2 * gap_pw
         count = max(1, element.segments)
         strip = SegmentStrip(
             count=count, filled=int(fraction * count + 0.5),
@@ -803,10 +827,11 @@ class MenuRenderer:
             color = element.selected_arrow_color
         else:
             color = arrow.text_color
-        return HorizontalDivision(elements=[replace(arrow, text_color=color)], padding=(_PART_INSET_PX, _PART_INSET_PX), gap=(0.0, 0.0))
+        inset_px = _PART_INSET_PX * tree.scale
+        return HorizontalDivision(elements=[replace(arrow, text_color=color)], padding=(inset_px, inset_px), gap=(0.0, 0.0))
 
-    def _measure_arrow_zone(self, arrow: Text) -> int:
-        return self._measure_text(arrow) + 2 * _PART_INSET_PX
+    def _measure_arrow_zone(self, arrow: Text, tree: MenuTree) -> int:
+        return self._measure_text(arrow) + 2 * _PART_INSET_PX * tree.scale
 
     # -------------------------------------------------------------------------
 
@@ -1093,6 +1118,15 @@ class DebugRenderer:
     def theme(self, theme: Theme) -> None:
         self.renderer.theme = theme
 
+    @property
+    def scale(self) -> int:
+        """The wrapped renderer's scale."""
+        return self.renderer.scale
+
+    @scale.setter
+    def scale(self, scale: int) -> None:
+        self.renderer.scale = scale
+
     def __getattr__(self, name: str) -> Any:
         # Anything not overridden here behaves as on the wrapped renderer.
         return getattr(self.renderer, name)
@@ -1255,6 +1289,48 @@ def _color(rgba: RGBA, alpha: int = 0xFF) -> pygame.Color:
     color = pygame.Color(rgba)
     color.a = max(0, min(255, int(color.a * alpha / 255)))
     return color
+
+
+def _check_scale(scale: int) -> int:
+    if not isinstance(scale, int) or isinstance(scale, bool) or scale < 1:
+        raise ValueError(f"Invalid {scale=}")
+    return scale
+
+
+def _get_hit_target[E: Element](element: E) -> E:
+    return getattr(element, "_hit_target", element)
+
+
+def _set_hit_target(element: Element, target: Element) -> None:
+    # Bookkeeping, not an edit, so it must not bump the render version.
+    object.__setattr__(element, "_hit_target", target)
+
+
+def _scale_element(element: Element, scale: int) -> Element:
+    # A shallow copy keeps the state that ``replace`` would drop, such as an open field's buffer, and assigning
+    # through object.__setattr__ leaves the render version alone. Fields are found by their annotation and
+    # name, so an element subclass is scaled without being listed here.
+    eff_element = copy.copy(element)
+    _set_hit_target(eff_element, element)
+
+    def scale_value(value: Any) -> Any:
+        if isinstance(value, Element):
+            return _scale_element(value, scale)
+        if isinstance(value, list):
+            return [scale_value(item) for item in value]
+        return value
+
+    for element_field in fields(element):
+        name, value = element_field.name, getattr(element, element_field.name)
+        if element_field.type in ("Measure", Measure):
+            if getattr(element, f"{name}_measure", MeasureType.ABSOLUTE) == MeasureType.ABSOLUTE:
+                value = (value[0] * scale, value[1] * scale)
+        elif name == "font_size" or (name.endswith(("_pw", "_ph", "_px", "_py")) and isinstance(value, int)):
+            value = value * scale
+        else:
+            value = scale_value(value)
+        object.__setattr__(eff_element, name, value)
+    return eff_element
 
 
 def _make_surf(pw: int, ph: int) -> pygame.Surface:

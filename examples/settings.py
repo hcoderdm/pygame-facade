@@ -6,11 +6,17 @@ from enum import Enum
 
 # The Settings menu's boxes, in the order this module lists the settings.
 SECTIONS = {
-    "Display": ["FPS"],
+    "Display": ["FPS", "GUI_SCALE"],
     "Audio": ["MASTER_VOLUME", "MUSIC_VOLUME", "SFX_VOLUME", "MUTE_AUDIO"],
     "Gameplay": ["PLAYER_NAME", "DIFFICULTY", "INVERT_Y_AXIS"],
     "Debug": ["DEBUG_MODE", "SHOW_FPS", "SHOW_HITBOXES"],
 }
+
+
+class GuiScaleType(Enum):
+    SMALL = 1
+    NORMAL = 2
+    LARGE = 3
 
 
 class DifficultyType(Enum):
@@ -35,6 +41,7 @@ class TextureQualityType(Enum):
 
 # Display.
 FPS: int = 120
+GUI_SCALE: GuiScaleType = GuiScaleType.SMALL
 
 # Audio.
 MASTER_VOLUME: float = 1.0

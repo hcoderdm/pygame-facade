@@ -68,6 +68,7 @@ class Start(Menu):
 
     root_alignment: AlignmentType = AlignmentType.CENTER
     root_background_alpha: int = 0xA0  # Lets the table and ball show through.
+    is_scaled: bool = False  # Built at its own sizes, which the other menus reach at the default GUI scale.
 
     def __post_init__(self):
         title_size = NATIVE_FONT_SIZE * 4

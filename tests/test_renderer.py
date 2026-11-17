@@ -603,3 +603,99 @@ def test_261113213323_2568542c():
     colors = {drawn.text: drawn.text_color for drawn, _ in tree_of(interface.renderer).element_rects if isinstance(drawn, NormalText)}
     assert colors["3"] == selector.altered_selection_color
     assert colors["/4"] == selector.count_text.text_color
+
+
+def test_261116235540_2fb9911e():
+    # A scale multiplies sizes and font sizes but keeps 1px borders, and hit-tests on the scaled copy reach the real element.
+    button = Button(label=Button.ButtonText(text="GO"))
+    interface = Interface(size=SIZE)
+    interface.fonts.add_dir(str(FONTS))
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), button]))
+    interface.render()
+    rect_1 = hit_rect_of(interface, button)
+
+    interface.scale = 2
+    surf = interface.render()
+    assert surf is not None
+    rect_2 = hit_rect_of(interface, button)
+    assert rect_2.size == (2 * rect_1.width, 2 * rect_1.height)
+    assert surf.get_at(rect_2.topleft) == drawn(button.border_color)
+    assert surf.get_at((rect_2.x + 1, rect_2.y + 1)) == drawn(button.background_color)
+    menu = interface.top_stack()
+    assert menu is not None
+    assert interface.renderer.find_selectable_at(menu, rect_2.center) is button
+    assert button.size == (148.0, 22.0) and button.label.font_size == 14
+
+
+def test_261116235540_3357a6eb():
+    # Changing the scale recomposes once, setting the same scale does not, and composing a scaled copy is not an edit.
+    interface = Interface(size=SIZE)
+    interface.push_stack(Title())
+    calls = counting_recomposes(interface)
+    interface.render()
+    version = Element._render_version
+
+    interface.scale = 2
+    interface.render()
+    interface.scale = 2
+    interface.render()
+
+    assert len(calls) == 2
+    assert Element._render_version == version
+
+
+def test_261116235540_bfd93208():
+    # A click at scale 2 activates the real button, not its scaled copy.
+    pressed = []
+    interface = Interface(size=SIZE)
+    interface.scale = 2
+    menu = Title(on_start=lambda: pressed.append(1))
+    interface.push_stack(menu)
+    interface.render()
+    start = next(e for e in menu._selectable_elements if isinstance(e, Button) and e.label.text == "START")
+    center = hit_rect_of(interface, start).center
+
+    interface.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=center, button=1))
+    interface.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, pos=center, button=1))
+
+    assert pressed == [1]
+
+
+def test_261116235540_b64dcd29():
+    # A scale must be a whole number of at least 1, and an open field keeps its typed text when drawn scaled.
+    interface = Interface(size=SIZE)
+    for scale in (0, 1.5, True):
+        try:
+            interface.scale = scale  # pyright: ignore[reportAttributeAccessIssue]
+        except ValueError:
+            continue
+        raise AssertionError(f"Invalid {scale=} was accepted")
+
+    menu = Form()
+    field = next(e for e in menu._selectable_elements if isinstance(e, InputField))
+    interface.scale = 2
+    interface.push_stack(menu)
+    field.open()
+    field.append("2")
+    interface.render()
+
+    texts = [drawn.text for drawn, _ in tree_of(interface.renderer).element_rects if isinstance(drawn, NormalText)]
+    assert any(text.startswith("PLAYER2") for text in texts)
+    assert [glyph_field for glyph_field, _ in tree_of(interface.renderer).rendered_glyphs] == [field]
+
+
+def test_261116235911_c325db5f():
+    # A menu with is_scaled off is drawn at its own sizes, and changing the scale does not recompose it.
+    interface = Interface(size=SIZE)
+    menu = Title(is_scaled=False)
+    interface.push_stack(menu)
+    interface.render()
+    start = menu._selectable_elements[0]
+    rect_1 = hit_rect_of(interface, start)
+    calls = counting_recomposes(interface)
+
+    interface.scale = 3
+    interface.render()
+
+    assert hit_rect_of(interface, start) == rect_1
+    assert calls == []
