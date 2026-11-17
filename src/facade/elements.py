@@ -488,6 +488,18 @@ class SectionHeader(Element):
 
 
 @dataclass(kw_only=True, repr=False)
+class ColorPatch(Element):
+    """A colour over a checkerboard, built by the renderer while composing a ``ColorSwatch``."""
+
+    color: RGBA
+    cell_pw: int  # Each checkerboard square is this wide and tall.
+    cell_colors: tuple[Color, Color]
+
+    background_color: Color = TRANSPARENT
+    is_selectable: bool = False
+
+
+@dataclass(kw_only=True, repr=False)
 class SegmentStrip(Element):
     """The segments of a ``ProgressBar`` or ``Slider``, built by the renderer while composing."""
 
@@ -828,6 +840,96 @@ class Selector(InteractiveElement):
 
 
 @dataclass(kw_only=True, repr=False)
+class KeyBinding(InteractiveElement):
+    """
+    The keys that trigger an action, such as ``("CTRL", "S")``, drawn as
+    filled chips joined by ``+``. Activating it listens for the next key
+    press and binds that key with the modifiers held, and Escape stops
+    listening with no change. The chips turn the edited colour once the
+    keys have changed, and the conflict colour while another binding in the
+    same menu has the same keys. While it listens, its prompt flashes. ``get_event_keys`` reads a key press the
+    same way, so a game can compare it with ``value``.
+    """
+
+    @dataclass(kw_only=True, repr=False)
+    class KeyText(NormalText):
+        """A key's name, cut out of its chip."""
+
+        text_color: Color = ThemeColorType.SURFACE_INPUT
+
+    @dataclass(kw_only=True, repr=False)
+    class JoinerText(NormalText):
+        """Drawn between the keys of a combination. The chips recolour it."""
+
+        text: str = "+"
+
+    @dataclass(kw_only=True, repr=False)
+    class ListeningText(NormalText):
+        """Flashes while waiting for a key press."""
+
+        text: str = "PRESS KEYS"
+
+    @dataclass(kw_only=True, repr=False)
+    class UnboundText(NormalText):
+        """Shown when no keys are bound."""
+
+        text: str = "NONE"
+        text_color: Color = ThemeColorType.TEXT_DISABLED
+
+    value: tuple[str, ...] = ()
+    action: Callable[[Any], bool] = field(default=lambda v: True)
+    key_text: Text = field(default_factory=KeyText)
+    joiner_text: Text = field(default_factory=JoinerText)
+    listening_text: Text = field(default_factory=ListeningText)
+    unbound_text: Text = field(default_factory=UnboundText)
+    chip_padding: Measure = (4.0, 3.0)  # Around each key's name, inside its chip.
+    chip_gap: Measure = (3.0, 0.0)  # Between a chip and the joiner.
+    size: Measure = _CONTROL_SIZE
+    padding: Measure = _PART_PADDING
+    alignment: AlignmentType = AlignmentType.CENTER
+    background_color: Color = ThemeColorType.SURFACE_INPUT
+    border_color: Color = ThemeColorType.BORDER_INPUT
+    border_thickness: int = 1
+    shadow_color: Color = ThemeColorType.SHADOW
+    shadow_alpha: int = _CONTROL_SHADOW_ALPHA
+    fill_color: Color = ThemeColorType.FILL
+    edited_fill_color: Color = ThemeColorType.WARNING
+    conflict_fill_color: Color = ThemeColorType.DANGER
+    selected_border_color: Color = ThemeColorType.PRIMARY
+    is_edited: bool = field(default=False, init=False, repr=False)
+    is_listening: bool = field(default=False, init=False, repr=False)
+
+    _prompt_period: ClassVar[float] = 0.5  # Seconds the prompt is shown, then hidden, while listening.
+    _listen_epoch: float = field(default=0.0, init=False, repr=False)  # Time listening started, so the prompt starts shown.
+
+    def listen(self) -> None:
+        """Wait for the next key press to bind."""
+        self.is_listening = True
+        self._listen_epoch = time.monotonic()
+
+    def is_prompt_shown(self) -> bool:
+        """Whether the flashing prompt is in its shown half at the current time, which is never while not listening."""
+        if not self.is_listening:
+            return False
+        return int((time.monotonic() - self._listen_epoch) / self._prompt_period) % 2 == 0
+
+    def cancel(self) -> None:
+        """Stop listening and keep the current keys."""
+        self.is_listening = False
+
+    def bind(self, keys: tuple[str, ...]) -> bool:
+        """Stop listening and bind ``keys``, calling ``action`` only if they differ from the current ones."""
+        self.is_listening = False
+        if keys == self.value:
+            return False
+        self.value = keys
+        self.is_edited = True
+        self.is_called = True
+        self.action(self.value)
+        return True
+
+
+@dataclass(kw_only=True, repr=False)
 class InputField(InteractiveElement):
     """
     Text typed after a terminal-style prompt, edited in a buffer that is
@@ -942,3 +1044,27 @@ class InputField(InteractiveElement):
         self.is_open = False
         return True
 
+
+@dataclass(kw_only=True, repr=False)
+class ColorSwatch(InputField):
+    """
+    An ``InputField`` for an ``#RRGGBBAA`` colour, with a square box before
+    it that shows the colour over a checkerboard, so its alpha can be seen.
+    The square previews what is typed as soon as it is a valid colour.
+    ``size`` covers both boxes.
+    """
+
+    validator: Callable[[str], bool] = field(default=lambda s: bool(re.fullmatch(RGBA_REGEX, s)))
+    swatch_pw: int = 22  # Square, as tall as an input.
+    swatch_gap_pw: int = 6  # Between the swatch box and the field.
+    swatch_padding: Measure = _PART_PADDING
+    checker_pw: int = 4  # Each checkerboard square is this wide and tall.
+    checker_colors: tuple[Color, Color] = (ThemeColorType.SURFACE_DISPLAY, ThemeColorType.BORDER_DISPLAY)
+    use_swatch: bool = True
+
+    def get_color(self) -> RGBA:
+        """The colour the swatch shows: what is being typed once it is valid, otherwise the committed value."""
+        for candidate in (self.get_field(), self.value.text):
+            if re.fullmatch(RGBA_REGEX, candidate):
+                return candidate
+        return TRANSPARENT

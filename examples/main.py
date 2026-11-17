@@ -9,7 +9,7 @@ import pygame
 
 import settings  # examples/settings.py, edited live by the Settings menu.
 from elements import Panel, SettingLabel, SettingRow, TitleButton, TitlePrimaryButton
-from facade import DebugRenderer, Interface, MenuRenderer, Theme, mix_rgba
+from facade import DebugRenderer, Interface, MenuRenderer, Theme, get_event_keys, mix_rgba
 from menus import About, Pause, Settings, Start
 
 
@@ -29,7 +29,6 @@ THEME = Theme(
     danger="#FF6B6BFF",  # red 5.
     success="#8CE99AFF",  # green 3.
     info="#66D9E8FF",  # cyan 3.
-    extras={"table": "#184030FF", "ball": "#FFD43BFF"},
 )
 
 
@@ -133,6 +132,15 @@ def main() -> int:
                     interface.push_stack(Pause)
                 elif isinstance(interface.top_stack(), Pause):
                     interface.pop_stack()
+            elif event.type == pygame.KEYDOWN and not interface.is_showing:
+                # The Controls section rebinds these while the game runs.
+                keys = get_event_keys(event)
+                if keys == settings.SPEED_UP:
+                    velocity *= 1.25
+                elif keys == settings.SLOW_DOWN:
+                    velocity *= 0.8
+                elif keys == settings.RESET_BALL:
+                    ball = pygame.Vector2(screen.get_size()) / 2
 
         if not interface.is_showing or isinstance(interface.top_stack(), Start):
             ball += velocity * dt
@@ -142,8 +150,8 @@ def main() -> int:
             if ball.y < 20 or ball.y > height - 20:
                 velocity.y = abs(velocity.y) if ball.y < 20 else -abs(velocity.y)
 
-        screen.fill(interface.theme.get_extra("table"))
-        pygame.draw.circle(screen, interface.theme.get_extra("ball"), ball, 20)
+        screen.fill(settings.TABLE_COLOR)
+        pygame.draw.circle(screen, settings.BALL_COLOR, ball, 20)
         
         # The Settings menu edits the scale, and setting the same one again is free.
         interface.scale = settings.GUI_SCALE.value

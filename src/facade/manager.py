@@ -10,6 +10,7 @@ import pygame
 from .elements import (
     BulletList,
     Button,
+    ColorSwatch,
     CreditList,
     Division,
     Element,
@@ -22,6 +23,7 @@ from .elements import (
     Image,
     InputField,
     InteractiveElement,
+    KeyBinding,
     NormalText,
     PrimaryButton,
     ProgressBar,
@@ -44,6 +46,13 @@ if TYPE_CHECKING:
 _POINTER_DEADZONE_PW = 8  # After a key press the pointer must travel this far before it takes focus back.
 _ARROW_DIRECTIONS = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left", pygame.K_RIGHT: "right"}
 _ACTIVATE_KEYS = (pygame.K_RETURN, pygame.K_KP_ENTER)
+# A modifier pressed on its own is held for the key that follows, not bound.
+_MODIFIER_KEYS = (
+    pygame.K_LCTRL, pygame.K_RCTRL, pygame.K_LSHIFT, pygame.K_RSHIFT, pygame.K_LALT, pygame.K_RALT,
+    pygame.K_LGUI, pygame.K_RGUI, pygame.K_MODE, pygame.K_CAPSLOCK, pygame.K_NUMLOCK,
+)
+# Left and right modifiers bind as one, in this order before the key.
+_MODIFIER_NAMES = (("CTRL", pygame.KMOD_CTRL), ("SHIFT", pygame.KMOD_SHIFT), ("ALT", pygame.KMOD_ALT), ("META", pygame.KMOD_GUI))
 _BUILTIN_ELEMENT_TYPES: tuple[type[Element], ...] = (
     Division,
     HorizontalDivision,
@@ -69,7 +78,9 @@ _BUILTIN_ELEMENT_TYPES: tuple[type[Element], ...] = (
     Toggle,
     Slider,
     Selector,
+    KeyBinding,
     InputField,
+    ColorSwatch,
 )
 
 
@@ -202,14 +213,14 @@ def handle_menu_mousemotion(menu: Menu, renderer: MenuRenderer | DebugRenderer, 
         menu._key_anchor_pos = None
 
     element = renderer.find_selectable_at(menu, event.pos)
-    typing_field = _get_typing_field(menu)
+    busy_element = _get_typing_field(menu) or _get_listening_binding(menu)
     if use_hand_cursor:
         is_text = isinstance(element, InputField)
         _set_system_cursor(pygame.SYSTEM_CURSOR_IBEAM if is_text else pygame.SYSTEM_CURSOR_HAND if element is not None else pygame.SYSTEM_CURSOR_ARROW)
 
     menu.set_pointer_leading(True)
-    if typing_field is not None and element is not typing_field:
-        # While typing, only the field is lit wherever the pointer wanders.
+    if busy_element is not None and element is not busy_element:
+        # While typing or listening, only that element is lit wherever the pointer wanders.
         menu.set_hovered(None)
         return element is not None
     menu.set_hovered(element, renderer.get_part_at(menu, element, event.pos) if element is not None else "")
@@ -228,6 +239,9 @@ def handle_menu_mousebuttondown(menu: Menu, renderer: MenuRenderer | DebugRender
     typing_field = _get_typing_field(menu)
     if typing_field is not None and element is not typing_field:
         _finish_typing(typing_field)
+    listening_binding = _get_listening_binding(menu)
+    if listening_binding is not None and element is not listening_binding:
+        listening_binding.cancel()
     if element is None:
         return False
 
@@ -278,12 +292,21 @@ def handle_menu_keydown(menu: Menu, renderer: MenuRenderer | DebugRenderer, even
     the ends. Left and Right adjust the focused element, or move focus sideways
     when it has nothing to adjust. Return activates it, Tab steps through
     elements in reading order and Escape goes back a menu. While a field is
-    being typed into, the keys edit it instead.
+    being typed into, the keys edit it instead, and while a key binding is
+    listening, the next key press is bound.
     """
     if event.type != pygame.KEYDOWN:
         raise ValueError(f"Invalid {event.type=}")
 
     key = event.key
+    listening_binding = _get_listening_binding(menu)
+    if listening_binding is not None:
+        # Every key goes to the binding, so arrows and Return can be bound too. Escape stops listening.
+        if key == pygame.K_ESCAPE:
+            listening_binding.cancel()
+        elif key not in _MODIFIER_KEYS:
+            listening_binding.bind(get_event_keys(event))
+        return True
     typing_field = _get_typing_field(menu)
     if typing_field is not None:
         if _handle_typing_key(typing_field, event):
@@ -343,6 +366,20 @@ def handle_menu_textinput(menu: Menu, renderer: MenuRenderer | DebugRenderer, ev
     return True
 
 
+def get_event_keys(event: pygame.event.Event) -> tuple[str, ...]:
+    """
+    The keys of a key press as a ``KeyBinding`` stores them, such as
+    ``("CTRL", "S")``: the held modifiers in a fixed order, then the key's
+    name. A modifier pressed on its own gives ``()``.
+    """
+    if event.type != pygame.KEYDOWN:
+        raise ValueError(f"Invalid {event.type=}")
+    if event.key in _MODIFIER_KEYS:
+        return ()
+    modifiers = tuple(name for name, mask in _MODIFIER_NAMES if event.mod & mask)
+    return (*modifiers, pygame.key.name(event.key).upper())
+
+
 def _set_system_cursor(cursor: int) -> None:
     # A platform without system cursors is not an error.
     try:
@@ -354,6 +391,11 @@ def _set_system_cursor(cursor: int) -> None:
 def _get_typing_field(menu: Menu) -> InputField | None:
     element = menu.get_selected_element()
     return element if isinstance(element, InputField) and element.is_open else None
+
+
+def _get_listening_binding(menu: Menu) -> KeyBinding | None:
+    element = menu.get_selected_element()
+    return element if isinstance(element, KeyBinding) and element.is_listening else None
 
 
 def _finish_typing(field: InputField) -> None:
@@ -399,6 +441,8 @@ def _activate(element: object) -> None:
         element()
     elif isinstance(element, Selector):
         element.next(is_wrapping=True)
+    elif isinstance(element, KeyBinding):
+        element.listen()
     elif isinstance(element, InputField):
         element.open()
 
@@ -410,6 +454,8 @@ def _activate_part(menu: Menu, renderer: MenuRenderer | DebugRenderer, element: 
         element()
     elif isinstance(element, (Selector, Slider)) and part in ("left", "right"):
         _adjust(element, 1 if part == "right" else -1)
+    elif isinstance(element, KeyBinding):
+        element.listen()
     elif isinstance(element, InputField):
         element.open()
 

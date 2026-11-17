@@ -8,7 +8,7 @@ import time
 
 import pygame
 
-from facade import DEFAULT_THEME, AlignmentType, Button, DebugRenderer, Element, Gap, InputField, Interface, Menu, MenuRenderer, NormalText, PrimaryButton, ProgressBar, Selector, Slider, Toggle
+from facade import DEFAULT_THEME, AlignmentType, Button, ColorSwatch, DebugRenderer, Element, Gap, HorizontalDivision, InputField, Interface, KeyBinding, Menu, MenuRenderer, NormalText, PrimaryButton, ProgressBar, Selector, Slider, ThemeColorType, Toggle
 from sample_menus import Form, Overlay, Title
 
 SIZE = (800, 600)
@@ -684,6 +684,22 @@ def test_261116235540_b64dcd29():
     assert [glyph_field for glyph_field, _ in tree_of(interface.renderer).rendered_glyphs] == [field]
 
 
+def test_261116235856_247c6ccd():
+    # A changed selector with a number box drew its option in the normal colour, because its box copy lost is_edited.
+    selector = Selector(selections=("A", "B", "C", "D"), value=1)
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), selector]))
+    interface.render()
+
+    def colors():
+        return {drawn.text: drawn.text_color for drawn, _ in tree_of(interface.renderer).element_rects if isinstance(drawn, NormalText)}
+
+    assert colors()["B"] == selector.selection_text.text_color
+    selector.next()
+    interface.render()
+    assert colors()["C"] == selector.altered_selection_color
+
+
 def test_261116235911_c325db5f():
     # A menu with is_scaled off is drawn at its own sizes, and changing the scale does not recompose it.
     interface = Interface(size=SIZE)
@@ -699,3 +715,81 @@ def test_261116235911_c325db5f():
 
     assert hit_rect_of(interface, start) == rect_1
     assert calls == []
+
+
+def test_261117000945_981f1b3b():
+    # Key bindings that share keys both draw in the conflict colour, and rebinding one clears it from both.
+    first = KeyBinding(value=("SPACE",))
+    second = KeyBinding(value=("SPACE",))
+    third = KeyBinding(value=("W",))
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), first, second, third]))
+    interface.render()
+
+    def chip_fills():
+        tree = tree_of(interface.renderer)
+        fills = {}
+        for drawn_element, rect in tree.element_rects:
+            if isinstance(drawn_element, HorizontalDivision) and drawn_element.background_color in (first.fill_color, first.conflict_fill_color, first.edited_fill_color):
+                owner = next(binding for binding in (first, second, third) if hit_rect_of(interface, binding).contains(rect))
+                fills[owner.id] = drawn_element.background_color
+        return fills
+
+    fills = chip_fills()
+    assert fills[first.id] == fills[second.id] == first.conflict_fill_color and fills[third.id] == first.fill_color
+    second.bind(("E",))
+    interface.render()
+    fills = chip_fills()
+    assert fills[first.id] == first.fill_color and fills[second.id] == first.edited_fill_color
+
+
+def test_261117000945_5569de88():
+    # Listening redraws a key binding as its prompt, and a colour swatch's typed text and cursor are drawn from the real field.
+    binding = KeyBinding(value=("SPACE",))
+    swatch = ColorSwatch(value=ColorSwatch.InputValueText(text="#FFFFFFFF"))
+    field = InputField()
+    interface = Interface(size=SIZE)
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), binding, swatch, field]))
+    interface.render()
+
+    def texts():
+        return [drawn_element.text for drawn_element, _ in tree_of(interface.renderer).element_rects if isinstance(drawn_element, NormalText)]
+
+    assert "SPACE" in texts()
+    binding.listen()
+    swatch.open()
+    swatch.append("0")
+    interface.render()
+    assert "PRESS KEYS" in texts() and "SPACE" not in texts()
+    assert any(text.startswith("#FFFFFFFF0") for text in texts())
+    assert [glyph_field for glyph_field, _ in tree_of(interface.renderer).rendered_glyphs if isinstance(glyph_field, ColorSwatch)] == [swatch]
+    assert hit_rect_of(interface, swatch).width == hit_rect_of(interface, field).width
+
+
+def test_261117001344_72b0b060():
+    # A listening key binding's prompt is normal text that flashes, redrawing only when it turns on or off, even at scale 2.
+    binding = KeyBinding(value=("SPACE",))
+    interface = Interface(size=SIZE)
+    interface.scale = 2
+    interface.push_stack(Panel(root_elements=[Gap(is_selectable=True), binding]))
+    calls = counting_recomposes(interface)
+    binding.listen()
+
+    def prompt():
+        return next(drawn_element for drawn_element, _ in tree_of(interface.renderer).element_rects if isinstance(drawn_element, NormalText) and drawn_element.text == "PRESS KEYS")
+
+    interface.render()
+    interface.render()
+    assert len(calls) == 1
+    assert prompt().text_color == binding.listening_text.text_color == ThemeColorType.TEXT_NORMAL and prompt().text_alpha == 0xFF
+
+    # Half a period later the prompt is hidden, which needs one recompose.
+    binding._listen_epoch -= KeyBinding._prompt_period
+    interface.render()
+    interface.render()
+    assert len(calls) == 2 and prompt().text_alpha == 0
+    assert [real for real, _ in tree_of(interface.renderer).rendered_prompts] == [binding]
+
+    binding.bind(("W",))
+    interface.render()
+    assert tree_of(interface.renderer).rendered_prompts == []

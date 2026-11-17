@@ -11,7 +11,7 @@ from typing import Callable
 import pygame
 
 from .assets import FontManager, ImageManager
-from .elements import InputField
+from .elements import InputField, KeyBinding
 from .manager import (
     ElementManager,
     MenuManager,
@@ -162,8 +162,10 @@ class Interface:
             if held is not None and held.key == event.key:
                 return True  # A repeat from pygame itself, when the game turned those on. The interface times its own.
             text = event.unicode if self._is_typing(menu) and event.unicode and event.unicode.isprintable() else ""
+            # A press that a key binding takes is bound once. Repeating it would then move the focus.
+            is_listening = self._is_listening(menu)
             is_used = handler(menu, event)
-            is_repeating = is_used and (event.key in _REPEAT_KEYS or bool(text))
+            is_repeating = is_used and not is_listening and (event.key in _REPEAT_KEYS or bool(text))
             self._held_key = HeldKey(event.key, event.mod, text, time.monotonic() + self.repeat_delay) if is_repeating else None
             return is_used
         if event.type == pygame.TEXTINPUT and held is not None and held.text and event.text == held.text:
@@ -200,6 +202,11 @@ class Interface:
     def _is_typing(menu: Menu) -> bool:
         element = menu.get_selected_element()
         return isinstance(element, InputField) and element.is_open
+
+    @staticmethod
+    def _is_listening(menu: Menu) -> bool:
+        element = menu.get_selected_element()
+        return isinstance(element, KeyBinding) and element.is_listening
 
     def resize(self, size: tuple[int, int]) -> None:
         """Set the GUI surface size, e.g. after the window is resized."""

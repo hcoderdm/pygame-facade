@@ -17,12 +17,14 @@ from facade import (
     AlignmentType,
     BulletList,
     Button,
+    ColorSwatch,
     CreditList,
     Element,
     Gap,
     HeadingTwoText,
     InputField,
     JustifyType,
+    KeyBinding,
     Measure,
     Menu,
     NATIVE_FONT_SIZE,
@@ -136,7 +138,8 @@ class Settings(Menu):
     attribute of ``settings`` (a module, namespace or other object).
 
     Edits are written straight back with ``setattr``. Enum values are edited
-    with a Selector, bool values with a Toggle, floats from 0 to 1 with a
+    with a Selector, tuples of key names with a KeyBinding, ``#RRGGBBAA`` strings
+    with a ColorSwatch, bool values with a Toggle, floats from 0 to 1 with a
     Slider, and other int, float and str values with an InputField.
 
     Laid out like ``About``: a centred heading, one box per section and a
@@ -191,6 +194,12 @@ class Settings(Menu):
                 return True
             return _apply
 
+        def _binding_action(name: str) -> Callable[[Any], bool]:
+            def _apply(keys: Any) -> bool:
+                setattr(config, name, tuple(keys))
+                return True
+            return _apply
+
         def _build_editor(name: str, value: Any) -> Element:
             if isinstance(value, Enum):
                 enum_cls = type(value)
@@ -201,6 +210,10 @@ class Settings(Menu):
                     value=members.index(value),
                     action=_selector_action(name, members),
                 )
+            if isinstance(value, tuple):
+                return KeyBinding(value=value, action=_binding_action(name))
+            if isinstance(value, str) and re.fullmatch(RGBA_REGEX, value, flags=re.IGNORECASE):
+                return ColorSwatch(value=ColorSwatch.InputValueText(text=value.upper()), action=_input_action(name, str.upper))
             if isinstance(value, bool):
                 return Toggle(value=value, action=_toggle_action(name))
             if isinstance(value, float) and 0.0 <= value <= 1.0:
@@ -217,7 +230,7 @@ class Settings(Menu):
         rows = {
             name: SettingRow(elements=[SettingLabel(text=name.upper().replace("_", " ")), _build_editor(name, value)])
             for name, value in vars(config).items()
-            if name.isupper() and isinstance(value, (bool, int, float, str, Enum))
+            if name.isupper() and isinstance(value, (bool, int, float, str, Enum, tuple))
         }
 
         groups: list[tuple[str | None, list[str]]] = [

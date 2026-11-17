@@ -5,7 +5,7 @@ test_interface.py
 import pygame
 import pytest
 
-from facade import Button, DebugRenderer, Element, HorizontalDivision, InputField, Interface, Menu, MenuRenderer, PrimaryButton, Selector, Slider, Toggle
+from facade import Button, ColorSwatch, DebugRenderer, Element, Gap, HorizontalDivision, InputField, Interface, KeyBinding, Menu, MenuRenderer, PrimaryButton, Selector, Slider, Toggle, get_event_keys
 from sample_menus import Overlay, Title, selected_label
 
 SIZE = (800, 600)
@@ -546,3 +546,114 @@ def test_261116231626_377c2382():
     interface.push_stack(Menu(root_elements=[Button()]))
     assert interface.render() is not None
     assert tap(interface, pygame.K_F3) and debug.use_stats_overlay
+
+
+def modded_key(k, mod):
+    return pygame.event.Event(pygame.KEYDOWN, key=k, mod=mod, unicode="", scancode=0)
+
+
+def test_261117000945_2fb097ee(interface):
+    # A key binding listens on Return and binds the next key with its held modifiers, ignoring a lone modifier.
+    bound = []
+    binding = KeyBinding(value=("SPACE",), action=lambda v: bound.append(v) or True)
+    interface.push_stack(Menu(root_elements=[binding]))
+    interface.render()
+
+    tap(interface, pygame.K_RETURN)
+    assert binding.is_listening
+    assert interface.handle_event(modded_key(pygame.K_LCTRL, pygame.KMOD_LCTRL))
+    assert binding.is_listening
+    assert interface.handle_event(modded_key(pygame.K_s, pygame.KMOD_LCTRL))
+    assert not binding.is_listening and binding.value == ("CTRL", "S") and binding.is_edited and bound == [("CTRL", "S")]
+
+
+def test_261117000945_0e3ea307(interface):
+    # Escape stops a key binding listening without changing it or closing the menu, and arrows can be bound.
+    binding = KeyBinding(value=("SPACE",))
+    other = Button()
+    interface.push_stack(Menu(root_elements=[binding, other]))
+    interface.render()
+
+    tap(interface, pygame.K_RETURN)
+    assert tap(interface, pygame.K_ESCAPE)
+    assert not binding.is_listening and binding.value == ("SPACE",) and not binding.is_edited
+    assert interface.is_showing
+
+    tap(interface, pygame.K_RETURN)
+    tap(interface, pygame.K_DOWN)
+    assert binding.value == ("DOWN",)
+    assert interface.top_stack().get_selected_element() is binding
+
+
+def test_261117000945_9faf69b3(interface):
+    # A held arrow that a key binding takes is bound once and never repeats into a focus move.
+    binding = KeyBinding()
+    interface.repeat_delay = 0.0
+    interface.repeat_interval = 0.0
+    interface.push_stack(Menu(root_elements=[binding, Button()]))
+    interface.render()
+
+    tap(interface, pygame.K_RETURN)
+    interface.handle_event(key(pygame.K_DOWN))
+    for _ in range(3):
+        interface.render()
+    assert binding.value == ("DOWN",)
+    assert interface.top_stack().get_selected_element() is binding
+
+
+def test_261117000945_57358eda(interface):
+    # Clicking elsewhere stops a key binding listening.
+    binding = KeyBinding(value=("SPACE",))
+    button = Button()
+    interface.push_stack(Menu(root_elements=[binding, button]))
+    interface.render()
+
+    press_and_release(interface, center_of(interface, binding))
+    assert binding.is_listening
+    interface.handle_event(click(center_of(interface, button)))
+    assert not binding.is_listening and binding.value == ("SPACE",)
+
+
+def test_261117000945_478e3c3d():
+    # Key presses read as modifiers in a fixed order and then the key, and a lone modifier reads as nothing.
+    assert get_event_keys(modded_key(pygame.K_s, pygame.KMOD_RSHIFT | pygame.KMOD_LCTRL)) == ("CTRL", "SHIFT", "S")
+    assert get_event_keys(key(pygame.K_SPACE)) == ("SPACE",)
+    assert get_event_keys(modded_key(pygame.K_LALT, pygame.KMOD_LALT)) == ()
+
+
+def test_261117000945_48bdcf8e(interface):
+    # A colour swatch commits a valid colour, keeps the old one for an invalid entry, and opens when its swatch is clicked.
+    saved = []
+    swatch = ColorSwatch(value=ColorSwatch.InputValueText(text="#FF6B6BFF"), action=lambda v: saved.append(v) or True)
+    interface.push_stack(Menu(root_elements=[swatch]))
+    interface.render()
+
+    rect = rect_of(interface, swatch)
+    press_and_release(interface, (rect.x + 4, rect.centery))
+    assert swatch.is_open
+    for _ in range(9):
+        tap(interface, pygame.K_BACKSPACE)
+    interface.handle_event(typed("#00"))
+    assert swatch.get_color() == "#FF6B6BFF"
+    tap(interface, pygame.K_RETURN)
+    assert swatch.is_open  # Invalid, so it stays open to be fixed.
+
+    interface.handle_event(typed("ff0080"))
+    assert swatch.get_color() == "#00FF0080"
+    tap(interface, pygame.K_RETURN)
+    assert not swatch.is_open and swatch.value.text == "#00FF0080" and saved == ["#00FF0080"]
+
+
+def test_261117000945_b5cfdfa6():
+    # At scale 2 a click on a selector's right half stepped back, because the number box was measured unscaled.
+    selector = Selector(selections=("A", "B", "C"), value=1)
+    interface = Interface(size=SIZE, use_hand_cursor=False)
+    interface.scale = 2
+    interface.push_stack(Menu(root_elements=[selector]))
+    interface.render()
+
+    rect = rect_of(interface, selector)
+    box_pw = rect.width - (selector.box_gap_pw + selector.number_pw) * 2
+    # Just right of the middle, which the unscaled sizes put left of the middle.
+    press_and_release(interface, (rect.x + box_pw // 2 + 4, rect.centery))
+    assert selector.value == 2

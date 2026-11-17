@@ -15,6 +15,7 @@ from .elements import (
     AlignmentType,
     BulletList,
     Button,
+    ColorSwatch,
     CreditList,
     Division,
     Element,
@@ -28,6 +29,7 @@ from .elements import (
     InputField,
     InteractiveElement,
     JustifyType,
+    KeyBinding,
     Measure,
     MeasureType,
     NormalText,
@@ -51,6 +53,7 @@ from .interface import Interface
 from .manager import (
     ElementManager,
     MenuManager,
+    get_event_keys,
     handle_menu_keydown,
     handle_menu_mousebuttondown,
     handle_menu_mousebuttonup,
@@ -91,7 +94,9 @@ __all__ = [
     "Toggle",
     "Slider",
     "Selector",
+    "KeyBinding",
     "InputField",
+    "ColorSwatch",
     # Attribute types.
     "RGBA",
     "TRANSPARENT",
@@ -126,6 +131,7 @@ __all__ = [
     "handle_menu_mousewheel",
     "handle_menu_keydown",
     "handle_menu_textinput",
+    "get_event_keys",
     # Rendering.
     "MenuRenderer",
     "DebugRenderer",

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 from menus import Settings, Start  # noqa: E402
 from sample_menus import selected_label  # noqa: E402
 
-from facade import Button, HorizontalDivision, InputField, SectionHeader, Selector, Slider, Toggle, VerticalDivision  # noqa: E402
+from facade import Button, ColorSwatch, HorizontalDivision, InputField, KeyBinding, SectionHeader, Selector, Slider, Toggle, VerticalDivision  # noqa: E402
 
 
 class Difficulty(Enum):
@@ -98,3 +98,16 @@ def test_261116225126_e2724a86():
     menu = Settings(settings=settings, sections=settings.SECTIONS)
 
     assert [(title, [row.elements[0].text for row in rows]) for title, rows in boxes_of(menu)] == [("Audio", ["VOLUME"])]
+
+
+def test_261117000945_2c7e9a14():
+    # Settings edits key tuples with a binding and colours with a swatch.
+    settings = SimpleNamespace(DIFFICULTY=Difficulty.EASY, JUMP=("SPACE",), TINT="#ff6b6bff")
+    menu = Settings(settings=settings)
+    editors = [row.elements[1] for _, rows in boxes_of(menu) for row in rows]
+    assert [type(e) for e in editors] == [Selector, KeyBinding, ColorSwatch]
+
+    binding = editors[1]
+    assert isinstance(binding, KeyBinding)
+    binding.bind(("CTRL", "J"))
+    assert settings.JUMP == ("CTRL", "J")

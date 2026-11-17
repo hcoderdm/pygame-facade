@@ -23,6 +23,8 @@ from .elements import (
     AlignmentType,
     BulletList,
     Button,
+    ColorPatch,
+    ColorSwatch,
     CreditList,
     Division,
     Element,
@@ -32,6 +34,7 @@ from .elements import (
     Image,
     InputField,
     JustifyType,
+    KeyBinding,
     Measure,
     MeasureType,
     OverflowType,
@@ -296,6 +299,7 @@ class MenuTree:
 
     root: Node | None = None
     rendered_glyphs: list[tuple[InputField, str]] = field(default_factory=list)
+    rendered_prompts: list[tuple[KeyBinding, bool]] = field(default_factory=list)  # Each listening binding and whether its prompt was shown.
     hit_rects: list[tuple[Element, pygame.Rect]] = field(default_factory=list)
     element_rects: list[tuple[Element, pygame.Rect]] = field(default_factory=list)
     facade_surf: pygame.Surface | None = None
@@ -308,13 +312,14 @@ class MenuTree:
         return self.root is not None and self.root.is_opaque
 
     def is_current(self, menu: Menu, size: tuple[int, int], scale: int) -> bool:
-        """Whether this tree still shows ``menu`` at ``size`` and ``scale``, with no element edited and no rendered cursor glyph changed since."""
+        """Whether this tree still shows ``menu`` at ``size`` and ``scale``, with no element edited and no rendered cursor glyph or flashing prompt changed since."""
         return (
             menu is self.menu
             and size == self.size
             and scale == self.scale
             and Element._render_version == self.render_version
             and all(input_field.get_cursor_glyph() == glyph for input_field, glyph in self.rendered_glyphs)
+            and all(binding.is_prompt_shown() == is_shown for binding, is_shown in self.rendered_prompts)
         )
 
     def find_at(self, facade_pos: tuple[int, int]) -> list[Element]:
@@ -397,6 +402,10 @@ class MenuRenderer:
             return node
         if isinstance(element, Selector) and element.use_number:
             node = self._compose_node(self._make_selector_row(element, tree, space), tree, space)
+            node.hit_target = hit_target
+            return node
+        if isinstance(element, ColorSwatch) and element.use_swatch:
+            node = self._compose_node(self._make_swatch_row(element, tree, space), tree, space)
             node.hit_target = hit_target
             return node
 
@@ -582,6 +591,21 @@ class MenuRenderer:
         row = HorizontalDivision(elements=[eff_label, rule], gap=(element.rule_gap_pw, 0.0), justify=JustifyType.START)
         return MenuTree.Node(element, children=[self._compose_node(row, tree, space)])
 
+    @_compose_content.register(ColorPatch)
+    def _(self, element: ColorPatch, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
+        patch_pw, patch_ph = space.range_pw.start, space.range_ph.start
+        patch_surf = _make_surf(patch_pw, patch_ph)
+        cell_pw = max(1, element.cell_pw)
+        cell_colors = [self._get_color(color) for color in element.cell_colors]
+        for cell_py in range(0, patch_ph, cell_pw):
+            for cell_px in range(0, patch_pw, cell_pw):
+                patch_surf.fill(cell_colors[(cell_px // cell_pw + cell_py // cell_pw) % 2], pygame.Rect(cell_px, cell_py, cell_pw, cell_pw))
+        # Blended over the checkerboard, so a translucent colour shows the squares through it.
+        color_surf = _make_surf(patch_pw, patch_ph)
+        color_surf.fill(_color(element.color))
+        patch_surf.blit(color_surf, (0, 0))
+        return MenuTree.Node(element, content_surf=patch_surf)
+
     @_compose_content.register(SegmentStrip)
     def _(self, element: SegmentStrip, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
         strip_pw = element.count * element.segment_pw + max(0, element.count - 1) * element.gap_pw
@@ -628,6 +652,37 @@ class MenuRenderer:
                 alignment=AlignmentType.CENTER, gap=(0.0, 0.0), background_color=background,
             ))
         row = HorizontalDivision(elements=halves, gap=(0.0, 0.0))
+        return MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
+
+    @_compose_content.register(KeyBinding)
+    def _(self, element: KeyBinding, tree: MenuTree, space: MenuTree.Space) -> MenuTree.Node:
+        is_lit = tree.selection_id == element.id or element.is_listening
+        eff_element = replace(element, border_color=element.selected_border_color) if is_lit else element
+
+        if element.is_listening:
+            # Hidden as clear text rather than left out, so the box's contents never change size as it flashes.
+            is_shown = element.is_prompt_shown()
+            tree.rendered_prompts.append((_get_hit_target(element), is_shown))
+            parts: list[Element] = [element.listening_text if is_shown else replace(element.listening_text, text_alpha=0)]
+        elif not element.value:
+            parts = [element.unbound_text]
+        else:
+            real = _get_hit_target(element)
+            is_conflict = any(
+                other is not real and isinstance(other, KeyBinding) and other.value == real.value
+                for other in tree.menu._selectable_elements
+            )
+            fill_color = element.conflict_fill_color if is_conflict else element.edited_fill_color if element.is_edited else element.fill_color
+            eff_joiner_text = element.joiner_text if fill_color == element.fill_color else replace(element.joiner_text, text_color=fill_color)
+            parts = []
+            for idx, key in enumerate(element.value):
+                if idx:
+                    parts.append(eff_joiner_text)
+                parts.append(HorizontalDivision(
+                    elements=[replace(element.key_text, text=key)], padding=element.chip_padding, gap=(0.0, 0.0),
+                    alignment=AlignmentType.CENTER, background_color=fill_color,
+                ))
+        row = HorizontalDivision(elements=parts, gap=element.chip_gap)
         return MenuTree.Node(eff_element, children=[self._compose_node(row, tree, space)])
 
     @_compose_content.register(Selector)
@@ -686,10 +741,13 @@ class MenuRenderer:
         size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
         # The selector box is a copy without its number, so it is drawn as before. The row holding both is
         # what is selected and clicked, and the copy keeps the id so it still lights with the real selector.
-        eff_selector_box = replace(
-            element, size=(float(size_pw - element.box_gap_pw - element.number_pw), float(size_ph)), size_measure=MeasureType.ABSOLUTE,
-            use_number=False, is_selectable=False, offset=(0.0, 0.0), margin=(0.0, 0.0), is_fixed=False,
-        )
+        # A shallow copy, not ``replace``, so state set outside __init__, such as ``is_edited``, is kept.
+        eff_selector_box = copy.copy(element)
+        for name, value in (
+            ("size", (float(size_pw - element.box_gap_pw - element.number_pw), float(size_ph))), ("size_measure", MeasureType.ABSOLUTE),
+            ("use_number", False), ("is_selectable", False), ("offset", (0.0, 0.0)), ("margin", (0.0, 0.0)), ("is_fixed", False),
+        ):
+            object.__setattr__(eff_selector_box, name, value)
         position, count = element.get_number()
         eff_number_text = replace(element.number_text, text=position)
         if element.is_edited:
@@ -706,6 +764,36 @@ class MenuRenderer:
         )
         return HorizontalDivision(
             elements=[eff_selector_box, number_box], gap=(float(element.box_gap_pw), 0.0), justify=element.justify, alignment=element.alignment,
+            offset=element.offset, offset_measure=element.offset_measure, margin=element.margin, margin_measure=element.margin_measure,
+            rotation=element.rotation, is_fixed=element.is_fixed, is_selectable=element.is_selectable,
+        )
+
+    def _make_swatch_row(self, element: ColorSwatch, tree: MenuTree, space: MenuTree.Space) -> HorizontalDivision:
+        # The swatch box and the field share the width the swatch's ``size`` gives. As with a selector's number box,
+        # the field is a copy without the swatch, and the row holding both is what is selected and clicked.
+        size_pw, size_ph = self._resolve_measure(element.size, element.size_measure, space)
+        eff_field = copy.copy(element)
+        for name, value in (
+            ("size", (float(size_pw - element.swatch_gap_pw - element.swatch_pw), float(size_ph))), ("size_measure", MeasureType.ABSOLUTE),
+            ("use_swatch", False), ("is_selectable", False), ("offset", (0.0, 0.0)), ("margin", (0.0, 0.0)), ("is_fixed", False),
+        ):
+            object.__setattr__(eff_field, name, value)
+        # The field records its cursor glyph, which must be checked against the real field on later frames.
+        _set_hit_target(eff_field, _get_hit_target(element))
+        swatch_padding_pw, swatch_padding_ph = self._resolve_measure(element.swatch_padding, MeasureType.ABSOLUTE, space)
+        patch_pw = max(0, element.swatch_pw - 2 * (swatch_padding_pw + element.border_thickness))
+        patch_ph = max(0, size_ph - 2 * (swatch_padding_ph + element.border_thickness))
+        patch = ColorPatch(size=(float(patch_pw), float(patch_ph)), color=element.get_color(), cell_pw=element.checker_pw, cell_colors=element.checker_colors)
+        swatch_box = HorizontalDivision(
+            elements=[patch], size=(float(element.swatch_pw), float(size_ph)), padding=element.swatch_padding,
+            gap=(0.0, 0.0), alignment=AlignmentType.CENTER,
+            background_color=element.background_color, background_alpha=element.background_alpha,
+            border_thickness=element.border_thickness, border_color=element.border_color, border_alpha=element.border_alpha,
+            shadow_color=element.shadow_color, shadow_alpha=element.shadow_alpha, shadow_scale=element.shadow_scale,
+            shadow_offset=element.shadow_offset, shadow_offset_measure=element.shadow_offset_measure,
+        )
+        return HorizontalDivision(
+            elements=[swatch_box, eff_field], gap=(float(element.swatch_gap_pw), 0.0), justify=element.justify, alignment=element.alignment,
             offset=element.offset, offset_measure=element.offset_measure, margin=element.margin, margin_measure=element.margin_measure,
             rotation=element.rotation, is_fixed=element.is_fixed, is_selectable=element.is_selectable,
         )
@@ -975,18 +1063,21 @@ class MenuRenderer:
         input field, or ``""`` for none.
         """
         rect = self.get_element_rect(menu, element)
-        if rect is None:
+        tree = self._menu_tree
+        if rect is None or tree is None:
             return ""
         px = pos[0]
-        if isinstance(element, (Button, Toggle)):
+        # The element holds its sizes unscaled, and the rect is as drawn.
+        scale = tree.scale
+        if isinstance(element, (Button, Toggle, KeyBinding)):
             return "body"
         if isinstance(element, Selector):
-            box_pw = rect.width - (element.box_gap_pw + element.number_pw if element.use_number else 0)
+            box_pw = rect.width - ((element.box_gap_pw + element.number_pw) * scale if element.use_number else 0)
             if px >= rect.x + box_pw:
                 return ""  # The number box only shows the position.
             return "left" if px < rect.x + box_pw // 2 else "right"
         if isinstance(element, Slider):
-            bar_pw = rect.width - (element.box_gap_pw + element.number_pw if element.use_number else 0)
+            bar_pw = rect.width - ((element.box_gap_pw + element.number_pw) * scale if element.use_number else 0)
             if px >= rect.x + bar_pw:
                 return ""  # The number box only shows the value.
             return "left" if px < rect.x + bar_pw // 2 else "right"
