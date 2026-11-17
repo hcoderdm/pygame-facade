@@ -83,7 +83,7 @@ class ImageManager:
     def clear_paths(self) -> None:
         self._cache.clear()
 
-    "Image queries."
+    # -------------------------------------------------------------------------
 
     def get_image(self, image: str) -> pygame.Surface | None:
         if image not in self._cache:

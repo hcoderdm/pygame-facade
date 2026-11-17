@@ -49,29 +49,18 @@ def check_args(args: argparse.Namespace) -> None:
         raise SystemExit(f"Invalid {args.size=}")
 
 
-def main() -> int:
-    args = parse_args()
+# -----------------------------------------------------------------------------
 
-    # Open the window.
-    pygame.init()
-    screen = pygame.display.set_mode(args.size, pygame.RESIZABLE)
-    pygame.display.set_caption("facade demo")
-    clock = pygame.time.Clock()
 
-    running = True
-    ball = pygame.Vector2(400, 300)
-    velocity = pygame.Vector2(240, 180)
+def init_facade() -> Interface:
+    """Build the interface, register fonts and elements, and add the menus."""
 
-    # Build the interface and its menus.
-    interface = Interface(size=screen.get_size(), theme=THEME)
+    renderer = DebugRenderer(MenuRenderer(THEME))
+    interface = Interface(size=pygame.display.get_window_size(), renderer=renderer)
 
-    # A renderer with debugging aids that F3 to F5 switch on.
-    interface.renderer = DebugRenderer(MenuRenderer(THEME))
-
-    # Register the bundled pixel font. Text elements default to "editundo.ttf".
     interface.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
-    
-    # Register this game's own elements alongside the built-in ones.
+    interface.images.add_dir(str(Path(__file__).parent / "assets" / "images"))
+
     for element_type in (TitleButton, TitlePrimaryButton, Panel, SettingLabel, SettingRow):
         interface.elements.add(element_type)
 
@@ -85,8 +74,8 @@ def main() -> int:
         interface.push_stack(Start)
 
     def _on_quit():
-        nonlocal running
-        running = False
+        # Equivalent to pygame.quit() and sys.exit().
+        pygame.event.post(pygame.event.Event(pygame.QUIT))
 
     def _on_restart():
         interface.pop_stack()
@@ -108,8 +97,24 @@ def main() -> int:
     interface.add(Pause(on_resume=_on_resume, on_restart=_on_restart, on_exit=_on_exit))
     interface.add(Start(on_start=_on_start, on_settings=_on_settings, on_about=_on_about, on_quit=_on_quit))
 
-    # -------------------------------------------------------------------------
+    return interface
 
+
+def main() -> int:
+    args = parse_args()
+
+    # Open the window.
+    pygame.init()
+    screen = pygame.display.set_mode(args.size, pygame.RESIZABLE)
+    pygame.display.set_caption("facade demo")
+    clock = pygame.time.Clock()
+
+    running = True
+    ball = pygame.Vector2(400, 300)
+    velocity = pygame.Vector2(240, 180)
+
+    # Build the interface and its menus.
+    interface = init_facade()
     interface.push_stack(Start)
 
     # Run the game.

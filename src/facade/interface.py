@@ -24,7 +24,7 @@ from .manager import (
 )
 from .menus import Menu
 from .renderer import DebugRenderer, MenuRenderer
-from .theme import DEFAULT_THEME, Theme
+from .theme import Theme
 
 
 _REPEAT_KEYS = (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_BACKSPACE, pygame.K_DELETE)
@@ -45,15 +45,15 @@ class Interface:
     ``False`` for every event, leaving input to the game.
     """
 
-    def __init__(self, size: tuple[int, int], theme: Theme = DEFAULT_THEME, use_hand_cursor: bool = True, repeat_delay: float = 0.4, repeat_interval: float = 0.05) -> None:
+    def __init__(self, size: tuple[int, int], renderer: MenuRenderer | DebugRenderer | None = None, use_hand_cursor: bool = True, repeat_delay: float = 0.4, repeat_interval: float = 0.05) -> None:
         """
         ``size`` is the window size in pixels. With ``use_hand_cursor`` the system
         cursor shows a hand over a selectable element, a text beam over an
         input field, and an arrow everywhere else. A held arrow key, Backspace,
         Delete or typed character repeats after ``repeat_delay`` seconds, then
         every ``repeat_interval`` seconds; repeats are applied in ``render``.
-        ``theme`` gives the colours that elements' ``ThemeColorType`` roles are
-        drawn in.
+        ``renderer`` draws the menus and holds the theme, fonts and images. It
+        defaults to a ``MenuRenderer`` with the default theme.
         """
         self.size: tuple[int, int] = (int(size[0]), int(size[1]))
         self.use_hand_cursor: bool = use_hand_cursor
@@ -62,7 +62,7 @@ class Interface:
         self._held_key: HeldKey | None = None
         self.menus: MenuManager = MenuManager()
         self.elements: ElementManager = ElementManager()
-        self.renderer: MenuRenderer | DebugRenderer = MenuRenderer(theme)
+        self.renderer: MenuRenderer | DebugRenderer = renderer if renderer is not None else MenuRenderer()
 
         self._event_handlers: dict[int, Callable[[Menu, pygame.event.Event], bool]] = {
             pygame.MOUSEMOTION: lambda menu, event: handle_menu_mousemotion(menu, self.renderer, event, use_hand_cursor=self.use_hand_cursor),

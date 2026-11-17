@@ -27,7 +27,7 @@ def counting_recomposes(interface):
 
 def test_261113211533_fa53db4c():
     # Roles are drawn in the interface theme.
-    interface = Interface(size=SIZE, theme=GREEN_THEME)
+    interface = Interface(size=SIZE, renderer=MenuRenderer(GREEN_THEME))
     interface.push_stack(Panel())
 
     surf = interface.render()
@@ -84,7 +84,7 @@ def test_261113211533_3733ff27():
 
 def test_261113211533_8085e761():
     # Fixed colours ignore the theme.
-    interface = Interface(size=SIZE, theme=GREEN_THEME)
+    interface = Interface(size=SIZE, renderer=MenuRenderer(GREEN_THEME))
     interface.push_stack(Panel(root_background_color="#FF0000FF"))
 
     surf = interface.render()

@@ -535,3 +535,14 @@ def test_261116230922_384b3959(interface):
 
     interface.clear_stack()
     assert tap(interface, pygame.K_F3) is False and debug.use_stats_overlay
+
+
+def test_261116231626_377c2382():
+    # A renderer passed to the constructor is used as-is, with its theme.
+    debug = DebugRenderer(MenuRenderer())
+    interface = Interface(size=(400, 120), renderer=debug, use_hand_cursor=False)
+    assert interface.renderer is debug
+    assert interface.theme is debug.theme
+    interface.push_stack(Menu(root_elements=[Button()]))
+    assert interface.render() is not None
+    assert tap(interface, pygame.K_F3) and debug.use_stats_overlay

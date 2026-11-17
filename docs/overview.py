@@ -21,6 +21,7 @@ from facade import (
     InputField,
     Interface,
     Menu,
+    MenuRenderer,
     PrimaryButton,
     ProgressBar,
     Selector,
@@ -94,7 +95,7 @@ def main() -> int:
     # Set up the interface.
     pygame.init()
     pygame.display.set_mode((1, 1))
-    interface = Interface(size=CELL_SIZE, theme=THEME, use_hand_cursor=False)
+    interface = Interface(size=CELL_SIZE, renderer=MenuRenderer(THEME), use_hand_cursor=False)
     interface.fonts.add_dir(str(FONTS))
     font = interface.fonts.get_font("editundo.ttf", NATIVE_FONT_SIZE)
     title_font = interface.fonts.get_font("editundo.ttf", 2 * NATIVE_FONT_SIZE)
