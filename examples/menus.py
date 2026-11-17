@@ -21,13 +21,11 @@ from facade import (
     Element,
     Gap,
     HeadingTwoText,
-    HorizontalDivision,
     InputField,
     JustifyType,
     Measure,
     Menu,
     NATIVE_FONT_SIZE,
-    TRANSPARENT,
     ThemeColorType,
     NormalText,
     PrimaryButton,
@@ -41,8 +39,8 @@ from facade import (
     VerticalDivision,
 )
 
+from elements import COLUMN_PW, PANEL_SHADOW_PH, TITLE_COLUMN_PW, Panel, SettingLabel, SettingRow, TitleButton, TitlePrimaryButton
 
-_TITLE_COLUMN_PW = 296.0  # Everything on the title screen shares the width of its buttons.
 
 # What the library can do, one line each at the title column's width.
 _DEMO_NOTES = (
@@ -52,10 +50,7 @@ _DEMO_NOTES = (
     "DEBUG FUNCTIONALITY",
 )
 
-_COLUMN_PW = 290.0  # The width of a settings row: a label, a gap and an input.
-_PANEL_PADDING = 16.0
 _SECTION_GAP_PH = 12.0  # Empty space between the heading, each box and the button, shadows included.
-_PANEL_SHADOW_PH = 3.0
 
 
 @dataclass(kw_only=True)
@@ -83,13 +78,13 @@ class Start(Menu):
             Gap(size=(0, 6)),
             NormalText(text="AN EXAMPLE OF THE FACADE LIBRARY", text_color=ThemeColorType.TEXT_MUTED),
             Gap(size=(0, 22)),
-            _title_primary_button("PLAY", self.on_start),
-            _title_button("SETTINGS", self.on_settings),
-            _title_button("ABOUT", self.on_about),
-            _title_button("QUIT", self.on_quit),
+            TitlePrimaryButton(label=TitlePrimaryButton.TitlePrimaryButtonText(text="PLAY"), action=self.on_start),
+            TitleButton(label=TitleButton.TitleButtonText(text="SETTINGS"), action=self.on_settings),
+            TitleButton(label=TitleButton.TitleButtonText(text="ABOUT"), action=self.on_about),
+            TitleButton(label=TitleButton.TitleButtonText(text="QUIT"), action=self.on_quit),
             Gap(size=(0, 18)),
-            SectionHeader(label=SectionHeader.HeaderText(text="INSIDE FACADE"), size=(_TITLE_COLUMN_PW, 0.0)),
-            BulletList(size=(_TITLE_COLUMN_PW, 0.0), paragraphs=list(_DEMO_NOTES)),
+            SectionHeader(label=SectionHeader.HeaderText(text="INSIDE FACADE"), size=(TITLE_COLUMN_PW, 0.0)),
+            BulletList(size=(TITLE_COLUMN_PW, 0.0), paragraphs=list(_DEMO_NOTES)),
         ]
         super().__post_init__()
 
@@ -195,19 +190,6 @@ class Settings(Menu):
                 return True
             return _apply
 
-        def _label(name: str) -> Element:
-            # Drawn like a read-only box, and wider than the inputs beside it.
-            return NormalText(
-                text=name.upper().replace("_", " "),
-                size=(136.0, 22.0),
-                padding=(6.0, 6.0),
-                alignment=AlignmentType.MIDLEFT,
-                background_color=ThemeColorType.SURFACE_DISPLAY,
-                border_color=ThemeColorType.BORDER_DISPLAY,
-                border_thickness=1,
-                shadow_color=TRANSPARENT,  # Display boxes sit flat. Only inputs cast a shadow.
-            )
-
         def _build_editor(name: str, value: Any) -> Element:
             if isinstance(value, Enum):
                 enum_cls = type(value)
@@ -230,14 +212,11 @@ class Settings(Menu):
                 action=_input_action(name, converter),
             )
 
+        # Only values with an editor become settings, so a module can keep other constants, such as its sections.
         rows = {
-            name: HorizontalDivision(
-                justify=JustifyType.START,
-                gap=(6.0, 0.0),
-                elements=[_label(name), _build_editor(name, value)],
-            )
+            name: SettingRow(elements=[SettingLabel(text=name.upper().replace("_", " ")), _build_editor(name, value)])
             for name, value in vars(config).items()
-            if name.isupper()
+            if name.isupper() and isinstance(value, (bool, int, float, str, Enum))
         }
 
         groups: list[tuple[str | None, list[str]]] = [
@@ -254,8 +233,8 @@ class Settings(Menu):
         for title, names in groups:
             if not names:
                 continue
-            header = [SectionHeader(label=SectionHeader.HeaderText(text=title), size=(_COLUMN_PW, 0.0), justify=JustifyType.START)] if title else []
-            elements += [_panel([*header, *[rows[name] for name in names]]), Gap(size=(0.0, _SECTION_GAP_PH + _PANEL_SHADOW_PH))]
+            header = [SectionHeader(label=SectionHeader.HeaderText(text=title), size=(COLUMN_PW, 0.0), justify=JustifyType.START)] if title else []
+            elements += [Panel(elements=[*header, *[rows[name] for name in names]]), Gap(size=(0.0, _SECTION_GAP_PH + PANEL_SHADOW_PH))]
         elements.append(Button(label=Button.ButtonText(text="RETURN"), action=self.on_return))
 
         self.root_elements = elements
@@ -272,7 +251,7 @@ class About(Menu):
     root_gap: Measure = (0.0, 0.0)  # Every gap is a Gap below, so the heading's can differ.
 
     def __post_init__(self):
-        column = (_COLUMN_PW, 0.0)
+        column = (COLUMN_PW, 0.0)
         intro = TextBlock(
             size=column,
             justify=JustifyType.START,
@@ -315,50 +294,17 @@ class About(Menu):
         # Shadows hang below a part's layout box, so each spacer adds the shadow of the part above it.
         # The heading's layout box already takes in its underline. Its shadow drops below that.
         after_heading = Gap(size=(0.0, _SECTION_GAP_PH + heading.shadow_offset[1]))
-        after_panel = (0.0, _SECTION_GAP_PH + _PANEL_SHADOW_PH)
+        after_panel = (0.0, _SECTION_GAP_PH + PANEL_SHADOW_PH)
         self.root_elements = [
             heading,
             after_heading,
-            _panel([intro]),
+            Panel(elements=[intro]),
             Gap(size=after_panel),
-            _panel(controls),
+            Panel(elements=controls),
             Gap(size=after_panel),
-            _panel(credits),
+            Panel(elements=credits),
             Gap(size=after_panel),
             Button(label=Button.ButtonText(text="RETURN"), action=self.on_return),
         ]
         super().__post_init__()
 
-
-def _title_button(text: str, action: Callable) -> Button:
-    # Twice the native font size keeps the pixel font crisp, and the box scales to match.
-    return Button(
-        label=Button.ButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
-        action=action,
-        size=(_TITLE_COLUMN_PW, 44.0),
-        padding=(12.0, 12.0),
-    )
-
-
-def _title_primary_button(text: str, action: Callable) -> PrimaryButton:
-    return PrimaryButton(
-        label=PrimaryButton.PrimaryButtonText(text=text, font_size=NATIVE_FONT_SIZE * 2),
-        action=action,
-        size=(_TITLE_COLUMN_PW, 44.0),
-    )
-
-
-def _panel(elements: list[Element]) -> VerticalDivision:
-    # A read-only box for one section, so its rows read as one group.
-    return VerticalDivision(
-        elements=elements,
-        size=(_COLUMN_PW + 2 * (_PANEL_PADDING + 1), 0.0),
-        padding=(_PANEL_PADDING, _PANEL_PADDING),
-        gap=(0.0, 8.0),
-        background_color=ThemeColorType.SURFACE_INPUT,
-        border_thickness=1,
-        border_color=ThemeColorType.BORDER_DISPLAY,
-        shadow_color=ThemeColorType.SHADOW,
-        shadow_alpha=0xB0,
-        shadow_offset=(_PANEL_SHADOW_PH, _PANEL_SHADOW_PH),
-    )

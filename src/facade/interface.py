@@ -28,6 +28,11 @@ from .theme import DEFAULT_THEME, Theme
 
 
 _REPEAT_KEYS = (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_BACKSPACE, pygame.K_DELETE)
+_DEBUG_KEYS: dict[int, Callable[[DebugRenderer], bool]] = {
+    pygame.K_F3: DebugRenderer.toggle_stats_overlay,
+    pygame.K_F4: DebugRenderer.toggle_hover_border,
+    pygame.K_F5: DebugRenderer.toggle_hit_rects,
+}
 
 
 class Interface:
@@ -129,7 +134,9 @@ class Interface:
     def handle_event(self, event: pygame.event.Event) -> bool:
         """
         Apply ``event`` to the top menu. Returns ``True`` if the GUI used the
-        event, in which case the game should ignore it.
+        event, in which case the game should ignore it. With a
+        ``DebugRenderer``, F3 toggles the stats overlay, F4 the hover border
+        and F5 the hit rectangles, even while a field is being typed into.
         """
         if event.type in (pygame.KEYUP, pygame.WINDOWFOCUSLOST):
             return self._release_key(event)
@@ -137,6 +144,9 @@ class Interface:
         handler = self._event_handlers.get(event.type)
         if menu is None or handler is None:
             return False
+        if event.type == pygame.KEYDOWN and event.key in _DEBUG_KEYS and isinstance(self.renderer, DebugRenderer):
+            _DEBUG_KEYS[event.key](self.renderer)
+            return True
 
         held = self._held_key
         if event.type == pygame.KEYDOWN:

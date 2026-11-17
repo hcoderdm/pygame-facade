@@ -4,6 +4,14 @@ settings.py
 
 from enum import Enum
 
+# The Settings menu's boxes, in the order this module lists the settings.
+SECTIONS = {
+    "Display": ["FPS"],
+    "Audio": ["MASTER_VOLUME", "MUSIC_VOLUME", "SFX_VOLUME", "MUTE_AUDIO"],
+    "Gameplay": ["PLAYER_NAME", "DIFFICULTY", "INVERT_Y_AXIS"],
+    "Debug": ["DEBUG_MODE", "SHOW_FPS", "SHOW_HITBOXES"],
+}
+
 
 class DifficultyType(Enum):
     EASY = "EASY"

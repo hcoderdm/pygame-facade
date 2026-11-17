@@ -1,5 +1,5 @@
 """
-demo.py
+main.py
 """
 
 import argparse
@@ -8,18 +8,29 @@ from pathlib import Path
 import pygame
 
 import settings  # examples/settings.py, edited live by the Settings menu.
-from facade import DebugRenderer, Interface, MenuRenderer
-from menus import About, Pause, Settings, Start  # examples/menus.py, this game's screens.
-from themes import TABLE_FELT  # examples/themes.py, the colours the menus and the table share.
+from elements import Panel, SettingLabel, SettingRow, TitleButton, TitlePrimaryButton
+from facade import DebugRenderer, Interface, MenuRenderer, Theme, mix_rgba
+from menus import About, Pause, Settings, Start
 
 
-# The Settings menu's boxes, in the order settings.py lists them.
-SETTINGS_SECTIONS = {
-    "Display": ["FPS"],
-    "Audio": ["MASTER_VOLUME", "MUSIC_VOLUME", "SFX_VOLUME", "MUTE_AUDIO"],
-    "Gameplay": ["PLAYER_NAME", "DIFFICULTY", "INVERT_Y_AXIS"],
-    "Debug": ["DEBUG_MODE", "SHOW_FPS", "SHOW_HITBOXES"],
-}
+THEME = Theme(
+    background="#0D231AFF",
+    surface_input="#123024FF",
+    surface_display="#345645FF",
+    border_input="#DBDBC0FF",
+    border_display="#627B67FF",
+    text_normal="#FFF9DBFF",
+    text_muted="#80937DFF",
+    fill="#FFF9DBFF",
+    heading="#FFD43BFF",  # yellow 4.
+    shadow="#060F0CFF",
+    primary="#FFD43BFF",  # yellow 4.
+    warning="#FFD43BFF",  # yellow 4.
+    danger="#FF6B6BFF",  # red 5.
+    success="#8CE99AFF",  # green 3.
+    info="#66D9E8FF",  # cyan 3.
+    extras={"table": "#184030FF", "ball": "#FFD43BFF"},
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,38 +63,54 @@ def main() -> int:
     velocity = pygame.Vector2(240, 180)
 
     # Build the interface and its menus.
-    interface = Interface(size=screen.get_size(), theme=TABLE_FELT)
-    # A renderer with debugging aids that the keys below switch on.
-    debug = DebugRenderer(MenuRenderer(TABLE_FELT))
-    interface.renderer = debug
+    interface = Interface(size=screen.get_size(), theme=THEME)
+
+    # A renderer with debugging aids that F3 to F5 switch on.
+    interface.renderer = DebugRenderer(MenuRenderer(THEME))
+
     # Register the bundled pixel font. Text elements default to "editundo.ttf".
     interface.fonts.add_dir(str(Path(__file__).parent / "assets" / "fonts"))
+    
+    # Register this game's own elements alongside the built-in ones.
+    for element_type in (TitleButton, TitlePrimaryButton, Panel, SettingLabel, SettingRow):
+        interface.elements.add(element_type)
 
-    debug_keybinds = {
-        pygame.K_F3: debug.toggle_stats_overlay,
-        pygame.K_F4: debug.toggle_hover_border,
-        pygame.K_F5: debug.toggle_hit_rects,
-    }
+    # -------------------------------------------------------------------------
 
-    def quit_game() -> None:
-        nonlocal running
-        running = False
+    def _on_about():
+        interface.push_stack(About)
 
-    def back_to_title() -> None:
+    def _on_exit():
         interface.clear_stack()
         interface.push_stack(Start)
 
-    interface.add(Settings(settings=settings, sections=SETTINGS_SECTIONS, on_return=interface.pop_stack))
-    interface.add(About(on_return=interface.pop_stack))
-    interface.add(Pause(on_resume=interface.pop_stack, on_restart=interface.pop_stack, on_exit=back_to_title))
-    interface.push_stack(
-        Start(
-            on_start=interface.clear_stack,  # Close every menu and play.
-            on_settings=lambda: interface.push_stack(Settings),
-            on_about=lambda: interface.push_stack(About),
-            on_quit=quit_game,
-        )
-    )
+    def _on_quit():
+        nonlocal running
+        running = False
+
+    def _on_restart():
+        interface.pop_stack()
+
+    def _on_resume():
+        interface.pop_stack()
+
+    def _on_return():
+        interface.pop_stack()
+
+    def _on_settings():
+        interface.push_stack(Settings)
+
+    def _on_start():
+        interface.clear_stack()
+
+    interface.add(Settings(settings=settings, sections=settings.SECTIONS, on_return=_on_return))
+    interface.add(About(on_return=_on_return))
+    interface.add(Pause(on_resume=_on_resume, on_restart=_on_restart, on_exit=_on_exit))
+    interface.add(Start(on_start=_on_start, on_settings=_on_settings, on_about=_on_about, on_quit=_on_quit))
+
+    # -------------------------------------------------------------------------
+
+    interface.push_stack(Start)
 
     # Run the game.
     while running:
@@ -93,19 +120,15 @@ def main() -> int:
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.VIDEORESIZE:
-                interface.resize(event.size)  # Keep the GUI surface the size of the window.
-            elif event.type == pygame.KEYDOWN and event.key in debug_keybinds:
-                debug_keybinds[event.key]()  # Checked before the menu so debug keys work while typing too.
+                interface.resize(event.size)
             elif interface.handle_event(event):
-                continue  # The menu used this event.
+                continue
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                # Escape reaches the game when there is no menu to go back to.
                 if not interface.is_showing:
                     interface.push_stack(Pause)
                 elif isinstance(interface.top_stack(), Pause):
                     interface.pop_stack()
 
-        # The ball keeps rolling behind the see-through title screen, and stops under every other menu.
         if not interface.is_showing or isinstance(interface.top_stack(), Start):
             ball += velocity * dt
             width, height = screen.get_size()
@@ -114,12 +137,12 @@ def main() -> int:
             if ball.y < 20 or ball.y > height - 20:
                 velocity.y = abs(velocity.y) if ball.y < 20 else -abs(velocity.y)
 
-        # Draw the game, then the GUI over it
-        # The game draws with the theme's own colours, so it matches the menus over it.
         screen.fill(interface.theme.get_extra("table"))
         pygame.draw.circle(screen, interface.theme.get_extra("ball"), ball, 20)
+        
         if (gui := interface.render()) is not None:
             screen.blit(gui, (0, 0))
+        
         pygame.display.flip()
 
     pygame.quit()

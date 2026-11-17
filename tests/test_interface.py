@@ -5,7 +5,7 @@ test_interface.py
 import pygame
 import pytest
 
-from facade import Button, Element, HorizontalDivision, InputField, Interface, Menu, PrimaryButton, Selector, Slider, Toggle
+from facade import Button, DebugRenderer, Element, HorizontalDivision, InputField, Interface, Menu, MenuRenderer, PrimaryButton, Selector, Slider, Toggle
 from sample_menus import Overlay, Title, selected_label
 
 SIZE = (800, 600)
@@ -516,3 +516,22 @@ def test_261116224321_d72fc716(interface):
     assert not interface.elements.has(Element) and not interface.elements.has(Badge)
     interface.elements.add(Badge)
     assert interface.elements.has(Badge) and Badge in set(interface.elements)
+
+
+def test_261116230922_384b3959(interface):
+    # F3 to F5 toggle a debug renderer's overlays, even while typing, and are left to the game otherwise.
+    field = InputField(value=InputField.InputValueText(text="PLAYER"))
+    interface.push_stack(Menu(root_elements=[field]))
+    interface.render()
+    assert tap(interface, pygame.K_F3) is False
+
+    debug = DebugRenderer(MenuRenderer())
+    interface.renderer = debug
+    tap(interface, pygame.K_RETURN)
+    assert field.is_open
+    assert tap(interface, pygame.K_F3) and tap(interface, pygame.K_F4) and tap(interface, pygame.K_F5)
+    assert debug.use_stats_overlay and debug.use_hover_border and debug.use_hit_rects
+    assert field.is_open
+
+    interface.clear_stack()
+    assert tap(interface, pygame.K_F3) is False and debug.use_stats_overlay

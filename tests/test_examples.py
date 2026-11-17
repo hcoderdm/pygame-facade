@@ -89,3 +89,12 @@ def test_261113205941_b198f055():
     boxes = [(title, [row.elements[0].text for row in rows]) for title, rows in boxes_of(menu)]
 
     assert boxes == [("Second", ["C", "A"]), ("First", ["B"]), ("Other", ["D"])]
+
+
+def test_261116225126_e2724a86():
+    # Settings gave an uppercase constant with no editor, such as the sections dict, a broken input field.
+    settings = SimpleNamespace(VOLUME=0.5, SECTIONS={"Audio": ["VOLUME"]})
+
+    menu = Settings(settings=settings, sections=settings.SECTIONS)
+
+    assert [(title, [row.elements[0].text for row in rows]) for title, rows in boxes_of(menu)] == [("Audio", ["VOLUME"])]
